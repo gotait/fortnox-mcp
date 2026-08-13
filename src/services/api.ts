@@ -1,6 +1,11 @@
-import axios, { AxiosError, AxiosRequestConfig } from "axios";
-import { getTokenProvider } from "../auth/index.js";
+import { getTokenProvider } from "../auth/registry.js";
 import { getCurrentUserId } from "../auth/context.js";
+import {
+  DEFAULT_TIMEOUT_MS,
+  HttpResponseError,
+  isTimeoutError,
+  readBody
+} from "./http.js";
 import {
   FORTNOX_API_BASE_URL,
   RATE_LIMIT_REQUESTS,
@@ -70,25 +75,38 @@ export async function fortnoxRequest<T>(
     }
   }
 
-  const config: AxiosRequestConfig = {
-    method,
-    url: `${FORTNOX_API_BASE_URL}${endpoint}`,
-    headers: {
-      "Authorization": `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      "Accept": "application/json"
-    },
-    timeout: 30000,
-    params: Object.keys(cleanParams).length > 0 ? cleanParams : undefined,
-    data
-  };
+  const url = new URL(`${FORTNOX_API_BASE_URL}${endpoint}`);
+  for (const [key, value] of Object.entries(cleanParams)) {
+    url.searchParams.set(key, String(value));
+  }
 
+  let response: Response;
   try {
-    const response = await axios(config);
-    return response.data;
+    response = await fetch(url, {
+      method,
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: data !== undefined ? JSON.stringify(data) : undefined,
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS)
+    });
   } catch (error) {
+    // Never reached the server: a timeout, DNS failure or refused connection.
     throw handleApiError(error, endpoint);
   }
+
+  const body = await readBody(response);
+
+  if (!response.ok) {
+    throw handleApiError(
+      new HttpResponseError(response.status, body, url.toString()),
+      endpoint
+    );
+  }
+
+  return body as T;
 }
 
 /**
@@ -97,15 +115,21 @@ export async function fortnoxRequest<T>(
 export function handleApiError(error: unknown, context?: string): Error {
   const prefix = context ? `[${context}] ` : "";
 
-  if (error instanceof AxiosError) {
-    const status = error.response?.status;
-    const data = error.response?.data;
+  if (error instanceof HttpResponseError) {
+    const status = error.status;
+    const data = error.data as {
+      ErrorInformation?: { message?: string; Message?: string };
+      message?: string;
+      error?: string;
+    } | string | undefined;
 
     // Extract Fortnox-specific error message
-    const fortnoxError = data?.ErrorInformation?.message ||
-      data?.ErrorInformation?.Message ||
-      data?.message ||
-      data?.error;
+    const fortnoxError = typeof data === "string"
+      ? data
+      : data?.ErrorInformation?.message ||
+        data?.ErrorInformation?.Message ||
+        data?.message ||
+        data?.error;
 
     switch (status) {
       case 400:
@@ -147,7 +171,11 @@ export function handleApiError(error: unknown, context?: string): Error {
   }
 
   if (error instanceof Error) {
-    if (error.message.includes("ECONNABORTED") || error.message.includes("timeout")) {
+    if (
+      isTimeoutError(error) ||
+      error.message.includes("ECONNABORTED") ||
+      error.message.includes("timeout")
+    ) {
       return new Error(
         `${prefix}Request timed out. The Fortnox API is not responding. Please try again.`
       );

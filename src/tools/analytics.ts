@@ -142,6 +142,8 @@ Answers questions like:
 - "What's the average invoice amount this year?"
 - "Show me revenue breakdown by customer"
 
+Cancelled invoices are excluded from all statistics unless filter="cancelled" is used.
+
 Args:
   - period ('today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year'): Date period to analyze
   - from_date (string): Start date YYYY-MM-DD (ignored if period specified)
@@ -343,6 +345,8 @@ Answers questions like:
 - "Which customers have the most invoices?"
 - "Who has the highest unpaid balance?"
 - "What's the average invoice size per customer?"
+
+Cancelled invoices are excluded from all metrics.
 
 Args:
   - metric ('total_amount' | 'invoice_count' | 'unpaid_amount' | 'average_invoice'): How to rank customers (default: total_amount)
@@ -560,7 +564,7 @@ Returns:
   For Markdown: Formatted aging report with totals
 
 Age Buckets:
-  - not_due: Due date is in the future
+  - not_due: Due date is in the future (or no due date set)
   - 1-30 days: Overdue 1-30 days
   - 31-60 days: Overdue 31-60 days
   - 61-90 days: Overdue 61-90 days

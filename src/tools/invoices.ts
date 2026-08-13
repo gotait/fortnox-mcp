@@ -60,6 +60,9 @@ interface FortnoxInvoice {
   Comments?: string;
   Remarks?: string;
   InvoiceRows?: FortnoxInvoiceRow[];
+  VoucherNumber?: number;
+  VoucherSeries?: string;
+  VoucherYear?: number;
   "@url"?: string;
 }
 
@@ -114,7 +117,7 @@ Args:
   - period ('today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year'): Convenience date period, overrides from_date/to_date
   - from_final_pay_date (string): Filter by due date from (YYYY-MM-DD)
   - to_final_pay_date (string): Filter by due date to (YYYY-MM-DD)
-  - sortby ('customername' | 'customernumber' | 'documentnumber' | 'invoicedate' | 'total'): Field to sort by
+  - sortby ('customername' | 'customernumber' | 'documentnumber' | 'invoicedate' | 'ocr' | 'total'): Field to sort by
   - sortorder ('ascending' | 'descending'): Sort order (default: ascending)
   - fetch_all (boolean): Fetch all results by auto-paginating (max 10,000 results)
   - min_amount (number): Filter invoices >= this amount (client-side)
@@ -441,7 +444,6 @@ Args:
   - remarks (string): Remarks printed on invoice
   - freight (number): Shipping cost
   - administration_fee (number): Admin fee
-  - send_type ('EMAIL' | 'PRINT' | 'EINVOICE'): How to send
 
 Returns:
   The created invoice with assigned document number.
@@ -531,7 +533,18 @@ Example rows:
 Args:
   - document_number (string): Invoice document number to update (required)
   - rows (array): Updated line items (replaces all existing rows)
-  - Other fields: Same as create_invoice
+  - invoice_date (string): Invoice date YYYY-MM-DD
+  - due_date (string): Due date YYYY-MM-DD
+  - our_reference (string): Our reference person
+  - your_reference (string): Customer's reference
+  - currency (string): 3-letter currency code
+  - terms_of_payment (string): Payment terms code
+  - comments (string): Internal comments
+  - remarks (string): Remarks printed on invoice
+  - freight (number): Shipping cost
+  - administration_fee (number): Admin fee
+
+Note: Unlike create_invoice, customer_number and invoice_type cannot be changed here.
 
 Returns:
   The updated invoice details.`,
@@ -566,6 +579,8 @@ Returns:
         if (params.due_date) invoiceData.DueDate = params.due_date;
         if (params.our_reference) invoiceData.OurReference = params.our_reference;
         if (params.your_reference) invoiceData.YourReference = params.your_reference;
+        if (params.currency) invoiceData.Currency = params.currency;
+        if (params.terms_of_payment) invoiceData.TermsOfPayment = params.terms_of_payment;
         if (params.comments) invoiceData.Comments = params.comments;
         if (params.remarks) invoiceData.Remarks = params.remarks;
         if (params.freight !== undefined) invoiceData.Freight = params.freight;
@@ -635,16 +650,23 @@ Returns:
           success: true,
           message: `Invoice #${invoice.DocumentNumber} has been booked`,
           document_number: invoice.DocumentNumber,
-          booked: true
+          booked: true,
+          voucher_number: invoice.VoucherNumber ?? null,
+          voucher_series: invoice.VoucherSeries || null,
+          voucher_year: invoice.VoucherYear ?? null
         };
 
         let textContent: string;
         if (params.response_format === ResponseFormat.JSON) {
           textContent = JSON.stringify(output, null, 2);
         } else {
+          const voucherRef = invoice.VoucherNumber !== undefined
+            ? `\n\n**Voucher**: ${invoice.VoucherSeries || "-"}${invoice.VoucherNumber}` +
+              (invoice.VoucherYear !== undefined ? ` (year ${invoice.VoucherYear})` : "")
+            : "";
           textContent = `# Invoice Booked\n\n` +
             `Invoice **#${invoice.DocumentNumber}** has been successfully booked.\n\n` +
-            `Accounting entries have been created.`;
+            `Accounting entries have been created.${voucherRef}`;
         }
 
         return buildToolResponse(textContent, output);
@@ -784,9 +806,10 @@ Returns:
     },
     async (params: SendInvoiceEmailInput) => {
       try {
+        // The Fortnox API exposes this write action (send email) as GET
         const response = await fortnoxRequest<InvoiceResponse>(
           `/3/invoices/${encodeURIComponent(params.document_number)}/email`,
-          "PUT"
+          "GET"
         );
         const invoice = response.Invoice;
 

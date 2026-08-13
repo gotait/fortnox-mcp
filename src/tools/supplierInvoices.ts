@@ -68,6 +68,7 @@ interface FortnoxSupplierInvoiceListItem {
   InvoiceNumber?: string;
   InvoiceDate?: string;
   DueDate?: string;
+  FinalPayDate?: string;
   Total?: number;
   Balance?: number;
   Currency?: string;
@@ -124,18 +125,20 @@ export function registerSupplierInvoiceTools(server: McpServer): void {
 
 Retrieves a paginated list of supplier invoices with optional filtering by status, supplier, date range, or amount.
 
+The Fortnox API only supports the 'filter' status parameter on this endpoint (server-side). All other filters and sorting are applied client-side: when any of them is used, the tool fetches all pages (max 10,000 results), then filters, sorts, and paginates locally.
+
 Args:
   - limit (number): Max results per page, 1-100 (default: 20)
   - page (number): Page number for pagination (default: 1)
-  - filter ('cancelled' | 'fullypaid' | 'unpaid' | 'unpaidoverdue' | 'unbooked' | 'pendingpayment'): Filter by invoice status
-  - supplier_number (string): Filter by supplier number
-  - from_date (string): Filter invoices from this date (YYYY-MM-DD)
-  - to_date (string): Filter invoices to this date (YYYY-MM-DD)
-  - period ('today' | 'yesterday' | ... | 'last_year'): Convenience date period, overrides from_date/to_date
-  - from_final_pay_date (string): Filter by due date from (YYYY-MM-DD)
-  - to_final_pay_date (string): Filter by due date to (YYYY-MM-DD)
-  - sortby ('suppliername' | 'suppliernumber' | 'invoicenumber' | 'invoicedate' | 'total'): Field to sort by
-  - sortorder ('ascending' | 'descending'): Sort order (default: ascending)
+  - filter ('cancelled' | 'fullypaid' | 'unpaid' | 'unpaidoverdue' | 'unbooked' | 'pendingpayment' | 'authorizepending'): Filter by invoice status (server-side; 'authorizepending' = awaiting payment authorization)
+  - supplier_number (string): Filter by supplier number (client-side)
+  - from_date (string): Filter by invoice date from this date (YYYY-MM-DD, client-side)
+  - to_date (string): Filter by invoice date to this date (YYYY-MM-DD, client-side)
+  - period ('today' | 'yesterday' | ... | 'last_year'): Convenience date period, overrides from_date/to_date (client-side)
+  - from_final_pay_date (string): Filter by final pay date from (YYYY-MM-DD, client-side)
+  - to_final_pay_date (string): Filter by final pay date to (YYYY-MM-DD, client-side)
+  - sortby ('suppliername' | 'suppliernumber' | 'invoicenumber' | 'invoicedate' | 'total'): Field to sort by (client-side)
+  - sortorder ('ascending' | 'descending'): Sort order, used with sortby (default: ascending)
   - fetch_all (boolean): Fetch all results by auto-paginating (max 10,000 results)
   - min_amount (number): Filter invoices >= this amount (client-side)
   - max_amount (number): Filter invoices <= this amount (client-side)
@@ -158,28 +161,31 @@ Examples:
     },
     async (params: ListSupplierInvoicesInput) => {
       try {
-        // Build query params
+        // GET /3/supplierinvoices only documents the `filter` query param -
+        // Fortnox silently ignores everything else, so all other filters and
+        // sorting are applied client-side after fetching.
         const queryParams: Record<string, string | number | boolean | undefined> = {};
 
         if (params.filter) queryParams.filter = params.filter;
-        if (params.supplier_number) queryParams.suppliernumber = params.supplier_number;
 
         // Handle period convenience filter (overrides explicit dates)
+        let fromDate = params.from_date;
+        let toDate = params.to_date;
         if (params.period) {
           const dateRange = periodToDateRange(params.period);
-          queryParams.fromdate = dateRange.from_date;
-          queryParams.todate = dateRange.to_date;
-        } else {
-          if (params.from_date) queryParams.fromdate = params.from_date;
-          if (params.to_date) queryParams.todate = params.to_date;
+          fromDate = dateRange.from_date;
+          toDate = dateRange.to_date;
         }
 
-        if (params.from_final_pay_date) queryParams.fromfinalpaydate = params.from_final_pay_date;
-        if (params.to_final_pay_date) queryParams.tofinalpaydate = params.to_final_pay_date;
-
-        // Handle sorting
-        if (params.sortby) queryParams.sortby = params.sortby;
-        if (params.sortorder) queryParams.sortorder = params.sortorder;
+        const needsClientFiltering =
+          params.supplier_number !== undefined ||
+          fromDate !== undefined ||
+          toDate !== undefined ||
+          params.from_final_pay_date !== undefined ||
+          params.to_final_pay_date !== undefined ||
+          params.min_amount !== undefined ||
+          params.max_amount !== undefined ||
+          params.sortby !== undefined;
 
         let invoices: FortnoxSupplierInvoiceListItem[];
         let total: number;
@@ -188,7 +194,7 @@ Examples:
         let truncated = false;
         let truncationReason: string | undefined;
 
-        if (params.fetch_all) {
+        if (params.fetch_all || needsClientFiltering) {
           // Use fetchAllPages for complete dataset
           const result = await fetchAllPages<FortnoxSupplierInvoiceListItem, SupplierInvoiceListResponse>(
             "/3/supplierinvoices",
@@ -212,12 +218,61 @@ Examples:
           total = response.MetaInformation?.["@TotalResources"] || invoices.length;
         }
 
-        // Apply client-side amount filters
-        if (params.min_amount !== undefined) {
-          invoices = invoices.filter(inv => (inv.Total || 0) >= params.min_amount!);
-        }
-        if (params.max_amount !== undefined) {
-          invoices = invoices.filter(inv => (inv.Total || 0) <= params.max_amount!);
+        // Apply client-side filters and sorting
+        if (needsClientFiltering) {
+          if (params.supplier_number !== undefined) {
+            invoices = invoices.filter(inv => inv.SupplierNumber === params.supplier_number);
+          }
+          if (fromDate !== undefined) {
+            invoices = invoices.filter(inv => inv.InvoiceDate !== undefined && inv.InvoiceDate >= fromDate!);
+          }
+          if (toDate !== undefined) {
+            invoices = invoices.filter(inv => inv.InvoiceDate !== undefined && inv.InvoiceDate <= toDate!);
+          }
+          if (params.from_final_pay_date !== undefined) {
+            invoices = invoices.filter(inv => inv.FinalPayDate !== undefined && inv.FinalPayDate >= params.from_final_pay_date!);
+          }
+          if (params.to_final_pay_date !== undefined) {
+            invoices = invoices.filter(inv => inv.FinalPayDate !== undefined && inv.FinalPayDate <= params.to_final_pay_date!);
+          }
+          if (params.min_amount !== undefined) {
+            invoices = invoices.filter(inv => (inv.Total || 0) >= params.min_amount!);
+          }
+          if (params.max_amount !== undefined) {
+            invoices = invoices.filter(inv => (inv.Total || 0) <= params.max_amount!);
+          }
+
+          if (params.sortby !== undefined) {
+            const direction = params.sortorder === "descending" ? -1 : 1;
+            const sortValue = (inv: FortnoxSupplierInvoiceListItem): string | number => {
+              switch (params.sortby) {
+                case "suppliername": return inv.SupplierName || "";
+                case "suppliernumber": return inv.SupplierNumber || "";
+                case "invoicenumber": return inv.InvoiceNumber || "";
+                case "invoicedate": return inv.InvoiceDate || "";
+                default: return inv.Total || 0;
+              }
+            };
+            invoices.sort((a, b) => {
+              const aValue = sortValue(a);
+              const bValue = sortValue(b);
+              if (aValue < bValue) return -direction;
+              if (aValue > bValue) return direction;
+              return 0;
+            });
+          }
+
+          // The API total counts unfiltered invoices - report post-filter
+          // totals instead. The count is exact whenever the fetch completed;
+          // a truncated fetch makes it a lower bound.
+          total = invoices.length;
+          totalIsExact = !truncated;
+
+          // Paginate the filtered set client-side
+          if (!params.fetch_all) {
+            const start = (params.page - 1) * params.limit;
+            invoices = invoices.slice(start, start + params.limit);
+          }
         }
 
         // Build pagination metadata
@@ -233,7 +288,10 @@ Examples:
             }
           : {
               ...buildPaginationMeta(total, params.page, params.limit, invoices.length),
-              next_offset: params.page * params.limit < total ? params.page * params.limit : undefined
+              total_is_exact: totalIsExact,
+              next_offset: params.page * params.limit < total ? params.page * params.limit : undefined,
+              truncated: truncated || undefined,
+              truncation_reason: truncationReason
             };
 
         const output = {
@@ -307,6 +365,10 @@ Examples:
                   `- **Status**: ${status.toUpperCase()}`;
               }
             );
+
+            if (truncated) {
+              textContent += `\n\n**Results truncated**: ${truncationReason}`;
+            }
           }
         }
 
@@ -499,8 +561,8 @@ Answers questions like:
 - "Which supplier invoices over 10,000 SEK are unpaid?"
 
 Args:
-  - min_amount (number): Only include invoices >= this amount
-  - supplier_number (string): Filter by specific supplier
+  - min_amount (number): Only include invoices with outstanding balance >= this amount
+  - supplier_number (string): Filter by specific supplier (client-side)
   - group_by ('supplier' | 'age_bucket' | 'both'): How to group report (default: both)
   - include_details (boolean): Include individual invoice list (default: true)
   - response_format ('markdown' | 'json'): Output format
@@ -529,12 +591,12 @@ Examples:
     },
     async (params: PayablesReportInput) => {
       try {
-        // Build query params - fetch unpaid invoices
+        // Build query params - fetch unpaid invoices. `filter` is the only
+        // query param GET /3/supplierinvoices documents; suppliernumber would
+        // be silently ignored, so the supplier filter is applied client-side.
         const queryParams: Record<string, string | number | boolean | undefined> = {
           filter: "unpaid"
         };
-
-        if (params.supplier_number) queryParams.suppliernumber = params.supplier_number;
 
         const result = await fetchAllPages<FortnoxSupplierInvoiceListItem, SupplierInvoiceListResponse>(
           "/3/supplierinvoices",
@@ -546,6 +608,11 @@ Examples:
         // Cancelled invoices can still come back under filter=unpaid, and they
         // will never be paid - mirrors the receivables side in analytics.ts.
         let invoices = result.items.filter(inv => !isSupplierInvoiceCancelled(inv));
+
+        // Apply supplier filter client-side
+        if (params.supplier_number !== undefined) {
+          invoices = invoices.filter(inv => inv.SupplierNumber === params.supplier_number);
+        }
 
         // Apply min_amount filter
         if (params.min_amount !== undefined) {

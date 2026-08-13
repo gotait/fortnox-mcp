@@ -9,8 +9,7 @@ import {
   formatCashFlowTable,
   formatFunnelVisualization,
   formatComparisonTableHeader,
-  formatComparisonRow,
-  formatMargin
+  formatComparisonRow
 } from "../services/formatters.js";
 import {
   periodToDateRange,
@@ -19,8 +18,7 @@ import {
   getLastNYears,
   getFutureDate,
   getTodayString,
-  isDueDateInRange,
-  type DatePeriod
+  isDueDateInRange
 } from "../services/dateHelpers.js";
 import {
   aggregateByDimension,
@@ -29,7 +27,6 @@ import {
   sumBy,
   countUnique,
   generateTimeBucketKeys,
-  getTimeBucketKey,
   type GrowthResult
 } from "../services/aggregationHelpers.js";
 import {
@@ -114,6 +111,11 @@ interface SupplierInvoiceListResponse {
   };
 }
 
+/**
+ * Order list item. Note: the list schema carries no InvoiceReference -
+ * that field exists only on the single-order detail object, so invoiced
+ * status must come from the server-side filter parameter instead.
+ */
 interface FortnoxOrderListItem {
   DocumentNumber: string;
   CustomerNumber: string;
@@ -122,7 +124,6 @@ interface FortnoxOrderListItem {
   Total?: number;
   Currency?: string;
   Cancelled?: boolean;
-  InvoiceReference?: string;
 }
 
 interface OrderListResponse {
@@ -134,6 +135,11 @@ interface OrderListResponse {
   };
 }
 
+/**
+ * Offer list item. Note: the list schema carries no OrderReference -
+ * that field exists only on the single-offer detail object, so converted
+ * status must come from the server-side filter parameter instead.
+ */
 interface FortnoxOfferListItem {
   DocumentNumber: string;
   CustomerNumber: string;
@@ -142,7 +148,6 @@ interface FortnoxOfferListItem {
   Total?: number;
   Currency?: string;
   Cancelled?: boolean;
-  OrderReference?: string;
 }
 
 interface OfferListResponse {
@@ -152,25 +157,6 @@ interface OfferListResponse {
     "@TotalPages": number;
     "@CurrentPage": number;
   };
-}
-
-interface FortnoxInvoiceDetail {
-  DocumentNumber: string;
-  CustomerNumber: string;
-  CustomerName?: string;
-  InvoiceDate?: string;
-  Total?: number;
-  InvoiceRows?: Array<{
-    ArticleNumber?: string;
-    Description?: string;
-    DeliveredQuantity?: number;
-    Price?: number;
-    Total?: number;
-  }>;
-}
-
-interface InvoiceDetailResponse {
-  Invoice: FortnoxInvoiceDetail;
 }
 
 interface FortnoxProject {
@@ -201,31 +187,6 @@ interface CostCenterListResponse {
   };
 }
 
-interface FortnoxVoucherRow {
-  Account: number;
-  Debit?: number;
-  Credit?: number;
-  Description?: string;
-  Project?: string;
-  CostCenter?: string;
-}
-
-interface FortnoxVoucher {
-  VoucherNumber: number;
-  VoucherSeries: string;
-  Year: number;
-  Description?: string;
-  TransactionDate?: string;
-  VoucherRows?: FortnoxVoucherRow[];
-}
-
-interface VoucherListResponse {
-  Vouchers: FortnoxVoucher[];
-  MetaInformation?: {
-    "@TotalResources": number;
-  };
-}
-
 /**
  * Register all Business Intelligence analytics tools
  */
@@ -239,7 +200,24 @@ export function registerBIAnalyticsTools(server: McpServer): void {
     "fortnox_cash_flow_forecast",
     {
       title: "Cash Flow Forecast",
-      description: `Generate cash flow forecast from unpaid receivables and payables. Shows expected inflows, outflows, net flow, and running balance grouped by week or month.`,
+      description: `Generate a cash flow forecast from unpaid customer invoices (receivables) and unpaid supplier invoices (payables). Shows expected inflows, outflows, net flow, and running balance per period, based on due dates.
+
+Args:
+  - horizon_days (number): Days ahead to forecast, 1-365 (default: 90)
+  - group_by ('week' | 'month'): Bucket size for the forecast (default: 'week')
+  - include_overdue (boolean): Include overdue items, placed in the first bucket (default: true)
+  - starting_balance (number): Optional opening cash balance for the running-balance projection (default: 0)
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  For JSON: { forecast, summary: { total_receivables, total_payables, net_position, receivables_count, payables_count, ending_balance }, periods: [...], truncated, warning? }
+  For Markdown: Summary table plus a per-period forecast table
+  Cancelled documents are excluded. Amounts are open balances, not invoice totals.
+
+Error Handling:
+  - Fetches at most 10,000 invoices per side; sets truncated=true with a truncation_reason if the cap is hit
+  - If supplier invoices are unavailable (missing scope), outflows show as 0 with a warning
+  - Returns "Error: ..." if the API call fails`,
       inputSchema: CashFlowForecastSchema,
       annotations: {
         readOnlyHint: true,
@@ -450,7 +428,23 @@ export function registerBIAnalyticsTools(server: McpServer): void {
     "fortnox_order_pipeline",
     {
       title: "Order Pipeline Analytics",
-      description: `Analyze order pipeline and backlog. Shows pending vs invoiced orders grouped by status, customer, or month.`,
+      description: `Analyze order pipeline and backlog. Classifies orders as pending (no invoice created yet), invoiced, or cancelled using Fortnox's server-side 'invoicenotcreated'/'invoicecreated' filters, and groups them by status, customer, or month.
+
+Args:
+  - period ('today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year'): Date period to analyze (order date)
+  - from_date (string): Start date YYYY-MM-DD (ignored if period specified)
+  - to_date (string): End date YYYY-MM-DD (ignored if period specified)
+  - group_by ('customer' | 'month' | 'status'): How to group pipeline statistics (default: 'status')
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  For JSON: { period, date_range, group_by, summary: { total_orders, total_value, pending_orders, pending_value, invoiced_orders, invoiced_value, cancelled_orders, unique_customers }, groups: [...], truncated }
+  For Markdown: Summary table plus a breakdown table for the chosen grouping
+  Cancelled orders are excluded from pending and invoiced counts and reported in their own bucket.
+
+Error Handling:
+  - Fetches at most 10,000 orders per status filter; sets truncated=true with a truncation_reason if the cap is hit
+  - Returns "Error: ..." if the API call fails`,
       inputSchema: OrderPipelineSchema,
       annotations: {
         readOnlyHint: true,
@@ -475,24 +469,46 @@ export function registerBIAnalyticsTools(server: McpServer): void {
           dateRangeDescription = `${params.from_date || "start"} to ${params.to_date || "end"}`;
         }
 
-        const result = await fetchAllPages<FortnoxOrderListItem, OrderListResponse>(
-          "/3/orders",
-          queryParams,
-          (r) => r.Orders || [],
-          (r) => r.MetaInformation?.["@TotalResources"] || 0
-        );
+        // Order list items carry no InvoiceReference (only the single-order
+        // detail object does), so invoiced vs pending must come from the
+        // server-side filters rather than from list item fields.
+        const [invoicedResult, notInvoicedResult] = await Promise.all([
+          fetchAllPages<FortnoxOrderListItem, OrderListResponse>(
+            "/3/orders",
+            { ...queryParams, filter: "invoicecreated" },
+            (r) => r.Orders || [],
+            (r) => r.MetaInformation?.["@TotalResources"] || 0
+          ),
+          fetchAllPages<FortnoxOrderListItem, OrderListResponse>(
+            "/3/orders",
+            { ...queryParams, filter: "invoicenotcreated" },
+            (r) => r.Orders || [],
+            (r) => r.MetaInformation?.["@TotalResources"] || 0
+          )
+        ]);
 
-        const orders = result.items;
+        // Cancelled orders can appear under either filter; the list item's
+        // Cancelled flag routes them to their own bucket so they never
+        // inflate the pending backlog or invoiced totals. Dedupe by
+        // document number in case an order shows up in both result sets.
+        type OrderStatus = "pending" | "invoiced" | "cancelled";
+        type OrderWithStatus = FortnoxOrderListItem & { status: OrderStatus };
 
-        // Calculate status for each order
-        const getStatus = (order: FortnoxOrderListItem): string => {
-          if (order.Cancelled) return "cancelled";
-          if (order.InvoiceReference) return "invoiced";
-          return "pending";
-        };
+        const seenOrders = new Set<string>();
+        const orders: OrderWithStatus[] = [];
+        for (const order of invoicedResult.items) {
+          if (seenOrders.has(order.DocumentNumber)) continue;
+          seenOrders.add(order.DocumentNumber);
+          orders.push({ ...order, status: order.Cancelled ? "cancelled" : "invoiced" });
+        }
+        for (const order of notInvoicedResult.items) {
+          if (seenOrders.has(order.DocumentNumber)) continue;
+          seenOrders.add(order.DocumentNumber);
+          orders.push({ ...order, status: order.Cancelled ? "cancelled" : "pending" });
+        }
 
         // Group orders
-        let groups: Map<string, FortnoxOrderListItem[]>;
+        let groups: Map<string, OrderWithStatus[]>;
 
         switch (params.group_by) {
           case "customer":
@@ -503,7 +519,7 @@ export function registerBIAnalyticsTools(server: McpServer): void {
             break;
           case "status":
           default:
-            groups = aggregateByDimension(orders, o => getStatus(o));
+            groups = aggregateByDimension(orders, o => o.status);
             break;
         }
 
@@ -518,9 +534,9 @@ export function registerBIAnalyticsTools(server: McpServer): void {
           .sort((a, b) => b.total_value - a.total_value);
 
         // Calculate overall summary
-        const pendingOrders = orders.filter(o => !o.Cancelled && !o.InvoiceReference);
-        const invoicedOrders = orders.filter(o => o.InvoiceReference && !o.Cancelled);
-        const cancelledOrders = orders.filter(o => o.Cancelled);
+        const pendingOrders = orders.filter(o => o.status === "pending");
+        const invoicedOrders = orders.filter(o => o.status === "invoiced");
+        const cancelledOrders = orders.filter(o => o.status === "cancelled");
 
         const output = {
           period: params.period || null,
@@ -537,8 +553,8 @@ export function registerBIAnalyticsTools(server: McpServer): void {
             unique_customers: countUnique(orders, o => o.CustomerNumber || "unknown")
           },
           groups: groupStats,
-          truncated: result.truncated,
-          truncation_reason: result.truncationReason
+          truncated: invoicedResult.truncated || notInvoicedResult.truncated,
+          truncation_reason: invoicedResult.truncationReason || notInvoicedResult.truncationReason
         };
 
         let textContent: string;
@@ -594,7 +610,22 @@ export function registerBIAnalyticsTools(server: McpServer): void {
     "fortnox_sales_funnel",
     {
       title: "Sales Funnel Analytics",
-      description: `Analyze sales funnel from offers to orders to invoices. Shows counts, values, and conversion rates at each stage.`,
+      description: `Analyze the sales funnel from offers to orders to invoices for a period. Stage conversion uses Fortnox's server-side filters ('ordercreated'/'ordernotcreated' for offers, 'invoicecreated'/'invoicenotcreated' for orders); cancelled documents are excluded from every stage.
+
+Args:
+  - period ('today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year'): Date period to analyze
+  - from_date (string): Start date YYYY-MM-DD (ignored if period specified)
+  - to_date (string): End date YYYY-MM-DD (ignored if period specified)
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  For JSON: { period, date_range, funnel: { offers: { count, value, converted, open }, orders: { count, value, converted, open }, invoices: { count, value } }, conversion_rates: { offer_to_order, order_to_invoice, overall }, truncated }
+  For Markdown: Funnel visualization, conversion rates, and open pipeline value
+  conversion_rates.overall is the product of the two stage rates (offer-to-order x order-to-invoice), NOT period invoices divided by period offers - the invoices counted in a period are not linked to that period's offers.
+
+Error Handling:
+  - Fetches at most 10,000 documents per stage filter; sets truncated=true if any fetch hit the cap
+  - Returns "Error: ..." if the API call fails`,
       inputSchema: SalesFunnelSchema,
       annotations: {
         readOnlyHint: true,
@@ -619,17 +650,38 @@ export function registerBIAnalyticsTools(server: McpServer): void {
           dateRangeDescription = `${params.from_date || "start"} to ${params.to_date || "end"}`;
         }
 
-        // Fetch all three stages in parallel
-        const [offersResult, ordersResult, invoicesResult] = await Promise.all([
+        // Offer/order list items carry no OrderReference/InvoiceReference
+        // (those fields exist only on single-document detail objects), so
+        // stage conversion must come from the server-side filters. Fetch
+        // converted and not-converted sets for each stage in parallel.
+        const [
+          convertedOffersResult,
+          openOffersResult,
+          convertedOrdersResult,
+          openOrdersResult,
+          invoicesResult
+        ] = await Promise.all([
           fetchAllPages<FortnoxOfferListItem, OfferListResponse>(
             "/3/offers",
-            queryParams,
+            { ...queryParams, filter: "ordercreated" },
+            (r) => r.Offers || [],
+            (r) => r.MetaInformation?.["@TotalResources"] || 0
+          ),
+          fetchAllPages<FortnoxOfferListItem, OfferListResponse>(
+            "/3/offers",
+            { ...queryParams, filter: "ordernotcreated" },
             (r) => r.Offers || [],
             (r) => r.MetaInformation?.["@TotalResources"] || 0
           ),
           fetchAllPages<FortnoxOrderListItem, OrderListResponse>(
             "/3/orders",
-            queryParams,
+            { ...queryParams, filter: "invoicecreated" },
+            (r) => r.Orders || [],
+            (r) => r.MetaInformation?.["@TotalResources"] || 0
+          ),
+          fetchAllPages<FortnoxOrderListItem, OrderListResponse>(
+            "/3/orders",
+            { ...queryParams, filter: "invoicenotcreated" },
             (r) => r.Orders || [],
             (r) => r.MetaInformation?.["@TotalResources"] || 0
           ),
@@ -641,16 +693,24 @@ export function registerBIAnalyticsTools(server: McpServer): void {
           )
         ]);
 
-        // Filter out cancelled items
-        const offers = offersResult.items.filter(o => !o.Cancelled);
-        const orders = ordersResult.items.filter(o => !o.Cancelled);
+        // Exclude cancelled documents from every stage (cancelled items can
+        // appear under either conversion filter), and dedupe by document
+        // number in case a document shows up in both result sets.
+        const convertedOffers = convertedOffersResult.items.filter(o => !o.Cancelled);
+        const convertedOfferNumbers = new Set(convertedOffers.map(o => o.DocumentNumber));
+        const openOffers = openOffersResult.items.filter(
+          o => !o.Cancelled && !convertedOfferNumbers.has(o.DocumentNumber)
+        );
+        const offers = [...convertedOffers, ...openOffers];
+
+        const convertedOrders = convertedOrdersResult.items.filter(o => !o.Cancelled);
+        const convertedOrderNumbers = new Set(convertedOrders.map(o => o.DocumentNumber));
+        const openOrders = openOrdersResult.items.filter(
+          o => !o.Cancelled && !convertedOrderNumbers.has(o.DocumentNumber)
+        );
+        const orders = [...convertedOrders, ...openOrders];
+
         const invoices = invoicesResult.items.filter(i => !i.Cancelled);
-
-        // Count converted offers (those with OrderReference)
-        const convertedOffers = offers.filter(o => o.OrderReference);
-
-        // Count converted orders (those with InvoiceReference)
-        const convertedOrders = orders.filter(o => o.InvoiceReference);
 
         // Calculate funnel metrics
         const offerCount = offers.length;
@@ -662,10 +722,13 @@ export function registerBIAnalyticsTools(server: McpServer): void {
         const invoiceCount = invoices.length;
         const invoiceValue = sumBy(invoices, i => i.Total || 0);
 
-        // Conversion rates
+        // Conversion rates. "Overall" is the product of the two stage rates:
+        // period invoices are not linked to period offers, so dividing
+        // invoice count by offer count would be meaningless (it can exceed
+        // 100% whenever invoices outnumber offers in the period).
         const offerToOrderRate = offerCount > 0 ? (convertedOffers.length / offerCount) * 100 : 0;
         const orderToInvoiceRate = orderCount > 0 ? (convertedOrders.length / orderCount) * 100 : 0;
-        const overallConversionRate = offerCount > 0 ? (invoiceCount / offerCount) * 100 : 0;
+        const overallConversionRate = (offerToOrderRate / 100) * (orderToInvoiceRate / 100) * 100;
 
         const funnelStages = [
           {
@@ -696,13 +759,13 @@ export function registerBIAnalyticsTools(server: McpServer): void {
               count: offerCount,
               value: offerValue,
               converted: convertedOffers.length,
-              open: offerCount - convertedOffers.length
+              open: openOffers.length
             },
             orders: {
               count: orderCount,
               value: orderValue,
               converted: convertedOrders.length,
-              open: orderCount - convertedOrders.length
+              open: openOrders.length
             },
             invoices: {
               count: invoiceCount,
@@ -712,9 +775,12 @@ export function registerBIAnalyticsTools(server: McpServer): void {
           conversion_rates: {
             offer_to_order: offerToOrderRate,
             order_to_invoice: orderToInvoiceRate,
+            // Product of the two stage rates, not period invoices / period offers
             overall: overallConversionRate
           },
-          truncated: offersResult.truncated || ordersResult.truncated || invoicesResult.truncated
+          truncated: convertedOffersResult.truncated || openOffersResult.truncated ||
+            convertedOrdersResult.truncated || openOrdersResult.truncated ||
+            invoicesResult.truncated
         };
 
         let textContent: string;
@@ -738,13 +804,13 @@ export function registerBIAnalyticsTools(server: McpServer): void {
           lines.push("");
           lines.push(`- **Offer → Order**: ${offerToOrderRate.toFixed(1)}% (${convertedOffers.length} of ${offerCount})`);
           lines.push(`- **Order → Invoice**: ${orderToInvoiceRate.toFixed(1)}% (${convertedOrders.length} of ${orderCount})`);
-          lines.push(`- **Overall (Offer → Invoice)**: ${overallConversionRate.toFixed(1)}%`);
+          lines.push(`- **Overall (Offer → Invoice, product of stage rates)**: ${overallConversionRate.toFixed(1)}%`);
 
           lines.push("");
           lines.push("## Pipeline Value");
           lines.push("");
-          lines.push(`- **Open Offers**: ${formatMoney(sumBy(offers.filter(o => !o.OrderReference), o => o.Total || 0))} (${offerCount - convertedOffers.length} offers)`);
-          lines.push(`- **Open Orders**: ${formatMoney(sumBy(orders.filter(o => !o.InvoiceReference), o => o.Total || 0))} (${orderCount - convertedOrders.length} orders)`);
+          lines.push(`- **Open Offers**: ${formatMoney(sumBy(openOffers, o => o.Total || 0))} (${openOffers.length} offers)`);
+          lines.push(`- **Open Orders**: ${formatMoney(sumBy(openOrders, o => o.Total || 0))} (${openOrders.length} orders)`);
 
           textContent = lines.join("\n");
         }
@@ -761,7 +827,26 @@ export function registerBIAnalyticsTools(server: McpServer): void {
     "fortnox_product_performance",
     {
       title: "Product Performance Analytics",
-      description: `Analyze product/customer sales performance. Returns top performers ranked by revenue, quantity, or invoice count.`,
+      description: `[LIMITED] Ranks CUSTOMERS by invoiced revenue or invoice count - NOT products. Invoice list items carry no row/article data, and fetching every invoice detail to get product rows would be prohibitively expensive, so this tool aggregates invoice totals per customer as a proxy. Product-level quantity metrics are not available.
+
+For per-customer revenue ranking this is accurate; for true product/article performance no tool is currently available.
+
+Args:
+  - period ('today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year'): Date period to analyze (invoice date)
+  - from_date (string): Start date YYYY-MM-DD (ignored if period specified)
+  - to_date (string): End date YYYY-MM-DD (ignored if period specified)
+  - metric ('revenue' | 'invoice_count'): Metric to rank customers by (default: 'revenue')
+  - top_n (number): Number of top customers to return, 1-100 (default: 20)
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  For JSON: { period, date_range, metric, summary: { total_revenue, total_invoices, unique_customers }, top_performers: [{ rank, identifier, name, revenue, invoice_count }], note, truncated }
+  For Markdown: Summary plus a ranked customer table
+  Cancelled invoices are excluded.
+
+Error Handling:
+  - Fetches at most 10,000 invoices; sets truncated=true if the cap is hit
+  - Returns "Error: ..." if the API call fails`,
       inputSchema: ProductPerformanceSchema,
       annotations: {
         readOnlyHint: true,
@@ -823,14 +908,16 @@ export function registerBIAnalyticsTools(server: McpServer): void {
           stats.invoice_count += 1;
         }
 
-        // Sort and take top N
+        // Sort and take top N. A 'quantity' metric is deliberately not
+        // offered: invoice list items carry no row/article data, so there is
+        // no quantity to sort by (a fallback sort would silently rank by a
+        // different metric than the caller asked for).
         const sortedStats = Array.from(customerStats.values())
           .sort((a, b) => {
             switch (params.metric) {
-              case "revenue":
-                return b.revenue - a.revenue;
               case "invoice_count":
                 return b.invoice_count - a.invoice_count;
+              case "revenue":
               default:
                 return b.revenue - a.revenue;
             }
@@ -909,7 +996,22 @@ export function registerBIAnalyticsTools(server: McpServer): void {
     "fortnox_period_comparison",
     {
       title: "Period Comparison Analytics",
-      description: `Compare business metrics (revenue, invoice count, etc.) between two time periods with percentage changes.`,
+      description: `Compare invoice-based business metrics between two time periods with percentage changes.
+
+Args:
+  - current_period ('today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year'): Current period to analyze
+  - compare_to (same values): Period to compare against (default: the previous equivalent period, e.g. this_month vs last_month)
+  - metrics (array of 'revenue' | 'invoice_count' | 'average_invoice' | 'unique_customers'): Metrics to compare (default: ['revenue', 'invoice_count', 'average_invoice'])
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  For JSON: { current_period: { period, description, date_range, metrics }, previous_period: {...}, comparison: { <metric>: { change, percentChange, trend } }, truncated }
+  For Markdown: Comparison table with both periods and the change per metric
+  'unique_customers' counts distinct customers invoiced in each period - it is NOT a count of newly acquired customers. Cancelled invoices are excluded.
+
+Error Handling:
+  - Fetches at most 10,000 invoices per period; sets truncated=true if the cap is hit
+  - Returns "Error: ..." if the API call fails`,
       inputSchema: PeriodComparisonSchema,
       annotations: {
         readOnlyHint: true,
@@ -952,7 +1054,8 @@ export function registerBIAnalyticsTools(server: McpServer): void {
           revenue: sumBy(invoices, i => i.Total || 0),
           invoice_count: invoices.length,
           average_invoice: invoices.length > 0 ? sumBy(invoices, i => i.Total || 0) / invoices.length : 0,
-          new_customers: countUnique(invoices, i => i.CustomerNumber || "unknown")
+          // Distinct customers invoiced in the period - not newly acquired customers
+          unique_customers: countUnique(invoices, i => i.CustomerNumber || "unknown")
         });
 
         const currentMetrics = calculateMetrics(currentInvoices);
@@ -1003,11 +1106,11 @@ export function registerBIAnalyticsTools(server: McpServer): void {
             revenue: "Revenue",
             invoice_count: "Invoice Count",
             average_invoice: "Avg Invoice",
-            new_customers: "Customers"
+            unique_customers: "Unique Customers"
           };
 
           for (const metric of params.metrics) {
-            const isCount = metric === "invoice_count" || metric === "new_customers";
+            const isCount = metric === "invoice_count" || metric === "unique_customers";
             lines.push(formatComparisonRow(
               metricLabels[metric] || metric,
               currentMetrics[metric as keyof typeof currentMetrics],
@@ -1031,7 +1134,24 @@ export function registerBIAnalyticsTools(server: McpServer): void {
     "fortnox_customer_growth",
     {
       title: "Customer Growth Analytics",
-      description: `Identify growing and declining customers by comparing revenue across periods. Shows growth rates and trends.`,
+      description: `Identify growing and declining customers by comparing invoiced revenue between two periods. Shows change, growth rate, and trend per customer.
+
+Args:
+  - current_period ('today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year'): Current period to analyze
+  - compare_to (same values): Period to compare against (default: the previous equivalent period)
+  - min_revenue (number): Only include customers with at least this revenue in either period
+  - top_n (number): Number of customers to return, 1-100 (default: 20)
+  - show ('growing' | 'declining' | 'all'): Filter by trend direction (default: 'all')
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  For JSON: { current_period, previous_period, filter, summary: { total_customers_analyzed, growing_customers, declining_customers, flat_customers }, customers: [{ customer_number, customer_name, current_revenue, previous_revenue, change, percent_change, trend }], truncated }
+  For Markdown: Summary plus a per-customer comparison table sorted by absolute change
+  Cancelled invoices are excluded.
+
+Error Handling:
+  - Fetches at most 10,000 invoices per period; sets truncated=true if the cap is hit
+  - Returns "Error: ..." if the API call fails`,
       inputSchema: CustomerGrowthSchema,
       annotations: {
         readOnlyHint: true,
@@ -1195,9 +1315,21 @@ export function registerBIAnalyticsTools(server: McpServer): void {
     "fortnox_project_profitability",
     {
       title: "Project Profitability Analytics",
-      description: `[LIMITED] Analyze profitability by project. Returns project list only.
+      description: `[LIMITED] Lists projects only - NO revenue, cost, or profitability figures are computed. Project financials require voucher analysis by project dimension, which this tool does not perform.
 
-For actual project financials, use fortnox_account_activity with project filtering on vouchers.`,
+For actual project financials, use fortnox_account_activity with project filtering on vouchers.
+
+Args:
+  - project_number (string): Filter to a specific project number
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  For JSON: { note, projects: [{ project_number, description, status, start_date, end_date }], truncated }
+  For Markdown: Project table (number, description, status)
+
+Error Handling:
+  - Fetches at most 10,000 projects; sets truncated=true if the cap is hit
+  - Returns "Error: ..." if the API call fails`,
       inputSchema: ProjectProfitabilitySchema,
       annotations: {
         readOnlyHint: true,
@@ -1238,21 +1370,6 @@ For actual project financials, use fortnox_account_activity with project filteri
           );
         }
 
-        // Build date range for voucher filtering
-        const queryParams: Record<string, string | number | boolean | undefined> = {};
-        let dateRangeDescription: string | undefined;
-
-        if (params.period) {
-          const dateRange = periodToDateRange(params.period);
-          queryParams.fromdate = dateRange.from_date;
-          queryParams.todate = dateRange.to_date;
-          dateRangeDescription = getPeriodDescription(params.period);
-        } else if (params.from_date || params.to_date) {
-          if (params.from_date) queryParams.fromdate = params.from_date;
-          if (params.to_date) queryParams.todate = params.to_date;
-          dateRangeDescription = `${params.from_date || "start"} to ${params.to_date || "end"}`;
-        }
-
         // Note: Full project profitability would require fetching vouchers
         // and filtering by project. This is a simplified version that only
         // lists projects - no revenue/cost figures are available here, so
@@ -1266,8 +1383,6 @@ For actual project financials, use fortnox_account_activity with project filteri
         }));
 
         const output = {
-          period: params.period || null,
-          date_range: dateRangeDescription || null,
           note: "Project revenue/cost breakdown requires voucher analysis with project dimension. Showing project list.",
           projects: projectStats,
           truncated: projectsResult.truncated
@@ -1283,11 +1398,6 @@ For actual project financials, use fortnox_account_activity with project filteri
             "*Note: Full revenue/cost breakdown requires voucher analysis with project dimension.*",
             ""
           ];
-
-          if (dateRangeDescription) {
-            lines.push(`**Period**: ${dateRangeDescription}`);
-            lines.push("");
-          }
 
           lines.push("## Projects");
           lines.push("");
@@ -1313,9 +1423,21 @@ For actual project financials, use fortnox_account_activity with project filteri
     "fortnox_cost_center_analysis",
     {
       title: "Cost Center Analysis",
-      description: `[LIMITED] Analyze costs by cost center/department. Returns cost center list only.
+      description: `[LIMITED] Lists active cost centers only - NO cost figures are computed. Cost data requires voucher analysis by cost center dimension, which this tool does not perform.
 
-For actual cost center data, use fortnox_account_activity with cost center filtering on vouchers.`,
+For actual cost center data, use fortnox_account_activity with cost center filtering on vouchers.
+
+Args:
+  - cost_center (string): Filter to a specific cost center code
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  For JSON: { note, cost_centers: [{ code, description, active }], truncated }
+  For Markdown: Cost center table (code, description, status)
+
+Error Handling:
+  - Fetches at most 10,000 cost centers; sets truncated=true if the cap is hit
+  - Returns "Error: ..." if the API call fails`,
       inputSchema: CostCenterAnalysisSchema,
       annotations: {
         readOnlyHint: true,
@@ -1341,13 +1463,6 @@ For actual cost center data, use fortnox_account_activity with cost center filte
           costCenters = costCenters.filter(cc => cc.Code === params.cost_center);
         }
 
-        let dateRangeDescription: string | undefined;
-        if (params.period) {
-          dateRangeDescription = getPeriodDescription(params.period);
-        } else if (params.from_date || params.to_date) {
-          dateRangeDescription = `${params.from_date || "start"} to ${params.to_date || "end"}`;
-        }
-
         // Note: Full cost center analysis would require fetching vouchers
         // and summing by cost center dimension. No cost figures are
         // available here, so none are emitted (a fabricated 0 could be
@@ -1359,11 +1474,6 @@ For actual cost center data, use fortnox_account_activity with cost center filte
         }));
 
         const output = {
-          period: params.period || null,
-          date_range: dateRangeDescription || null,
-          account_range: params.account_range_from || params.account_range_to
-            ? { from: params.account_range_from, to: params.account_range_to }
-            : null,
           note: "Cost breakdown requires voucher analysis with cost center dimension. Showing cost center list.",
           cost_centers: costCenterStats,
           truncated: costCentersResult.truncated
@@ -1379,11 +1489,6 @@ For actual cost center data, use fortnox_account_activity with cost center filte
             "*Note: Full cost breakdown requires voucher analysis with cost center dimension.*",
             ""
           ];
-
-          if (dateRangeDescription) {
-            lines.push(`**Period**: ${dateRangeDescription}`);
-            lines.push("");
-          }
 
           lines.push("## Cost Centers");
           lines.push("");
@@ -1413,15 +1518,34 @@ For actual cost center data, use fortnox_account_activity with cost center filte
     "fortnox_expense_analysis",
     {
       title: "Expense Analysis",
-      description: `[LIMITED] Analyze expenses by account class. Returns category structure only.
+      description: `[LIMITED] Returns the BAS account class structure only - NO expense amounts are fetched or computed. This tool makes no API calls; date arguments are echoed back, and the account range only filters which classes appear.
 
-For actual expense data, use fortnox_account_activity with account_range={from: 4000, to: 8999}.`,
+For actual expense data, use fortnox_account_activity with account_range={from: 4000, to: 8999}.
+
+Args:
+  - period ('today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year'): Echoed in the output only
+  - from_date (string): Start date YYYY-MM-DD (ignored if period specified). Echoed in the output only
+  - to_date (string): End date YYYY-MM-DD (ignored if period specified). Echoed in the output only
+  - account_range_from (number): Start of expense account range (default: 4000). Filters which account classes appear
+  - account_range_to (number): End of expense account range (default: 8999). Filters which account classes appear
+  - group_by ('account' | 'account_class'): Echoed in the output only (default: 'account_class')
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  For JSON: { period, date_range, account_range, group_by, note, expense_classes: [{ class, name }] }
+  For Markdown: Account class table (class, category)
+  No amount fields are emitted - amounts are not known to this tool.
+
+Error Handling:
+  - Returns "Error: ..." only on internal errors (no API calls are made)`,
       inputSchema: ExpenseAnalysisSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
-        openWorldHint: true
+        // openWorldHint is false because this tool makes zero API calls:
+        // it only returns the static BAS account-class structure.
+        openWorldHint: false
       }
     },
     async (params: ExpenseAnalysisInput) => {
@@ -1433,14 +1557,16 @@ For actual expense data, use fortnox_account_activity with account_range={from: 
           dateRangeDescription = `${params.from_date || "start"} to ${params.to_date || "end"}`;
         }
 
-        // Note: Full expense analysis requires fetching vouchers and filtering by account range
-        // This is a placeholder showing the structure
+        // Note: Full expense analysis requires fetching vouchers and filtering
+        // by account range. This is a placeholder showing the structure - no
+        // amounts are available here, so none are emitted (a fabricated 0
+        // could be relayed as fact).
         const expenseClasses = [
-          { class: "4xxx", name: "Cost of Goods Sold", amount: 0 },
-          { class: "5xxx", name: "Personnel Costs", amount: 0 },
-          { class: "6xxx", name: "Other External Costs", amount: 0 },
-          { class: "7xxx", name: "Depreciation", amount: 0 },
-          { class: "8xxx", name: "Financial Items", amount: 0 }
+          { class: "4xxx", name: "Cost of Goods Sold" },
+          { class: "5xxx", name: "Personnel Costs" },
+          { class: "6xxx", name: "Other External Costs" },
+          { class: "7xxx", name: "Depreciation" },
+          { class: "8xxx", name: "Financial Items" }
         ].filter(c => {
           const classStart = parseInt(c.class.replace("xxx", "000"));
           const classEnd = parseInt(c.class.replace("xxx", "999"));
@@ -1456,8 +1582,7 @@ For actual expense data, use fortnox_account_activity with account_range={from: 
           },
           group_by: params.group_by,
           note: "Full expense breakdown requires voucher analysis. Showing account class structure.",
-          expense_classes: expenseClasses,
-          comparison_period: params.compare_to || null
+          expense_classes: expenseClasses
         };
 
         let textContent: string;
@@ -1501,7 +1626,21 @@ For actual expense data, use fortnox_account_activity with account_range={from: 
     "fortnox_yearly_comparison",
     {
       title: "Yearly Comparison Analytics",
-      description: `Compare revenue and metrics across multiple years (2-5). Shows year-over-year growth trends.`,
+      description: `Compare invoice-based metrics across multiple calendar years (2-5) with year-over-year growth. Note: the current calendar year only contains data through today, so its figures and YoY changes understate a full year when compared against complete prior years.
+
+Args:
+  - years (number): Number of years to compare, 2-5, counting back from the current year (default: 3)
+  - metrics (array of 'revenue' | 'invoice_count' | 'average_invoice' | 'customer_count'): Metrics to include (default: ['revenue', 'invoice_count'])
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  For JSON: { years_compared, metrics, note, years: [{ year, revenue, invoice_count, average_invoice, customer_count, growth, truncated }], truncated }
+  For Markdown: One table per selected metric with YoY change
+  Cancelled invoices are excluded. customer_count is distinct customers invoiced that year.
+
+Error Handling:
+  - Fetches at most 10,000 invoices per year; sets truncated=true if any year hit the cap
+  - Returns "Error: ..." if the API call fails`,
       inputSchema: YearlyComparisonSchema,
       annotations: {
         readOnlyHint: true,
@@ -1555,14 +1694,19 @@ For actual expense data, use fortnox_account_activity with account_range={from: 
             growth: {
               revenue: calculateGrowth(current.revenue, previous.revenue),
               invoice_count: calculateGrowth(current.invoice_count, previous.invoice_count),
+              average_invoice: calculateGrowth(current.average_invoice, previous.average_invoice),
               customer_count: calculateGrowth(current.customer_count, previous.customer_count)
             }
           };
         });
 
+        const currentYear = yearRanges[0]?.year;
+        const partialYearNote = `The current year (${currentYear}) only contains data through today; its figures understate a full year when compared against complete prior years.`;
+
         const output = {
           years_compared: params.years,
           metrics: params.metrics,
+          note: partialYearNote,
           years: yearsWithGrowth,
           truncated: yearResults.some(r => r.result.truncated)
         };
@@ -1575,6 +1719,8 @@ For actual expense data, use fortnox_account_activity with account_range={from: 
             "# Yearly Comparison",
             "",
             `**Years**: ${yearRanges.map(y => y.year).join(", ")}`,
+            "",
+            `*Note: ${partialYearNote}*`,
             "",
             "## Year-over-Year Metrics",
             ""
@@ -1606,6 +1752,19 @@ For actual expense data, use fortnox_account_activity with account_range={from: 
             lines.push("");
           }
 
+          // Average invoice table
+          if (params.metrics.includes("average_invoice")) {
+            lines.push("### Average Invoice");
+            lines.push("");
+            lines.push("| Year | Avg Invoice | YoY Change |");
+            lines.push("|------|-------------|------------|");
+            for (const y of yearsWithGrowth) {
+              const change = y.growth?.average_invoice ? formatTrend(y.growth.average_invoice.percentChange) : "-";
+              lines.push(`| ${y.year} | ${formatMoney(y.average_invoice)} | ${change} |`);
+            }
+            lines.push("");
+          }
+
           // Customer count table
           if (params.metrics.includes("customer_count")) {
             lines.push("### Unique Customers");
@@ -1633,17 +1792,35 @@ For actual expense data, use fortnox_account_activity with account_range={from: 
     "fortnox_gross_margin_trend",
     {
       title: "Gross Margin Trend Analytics",
-      description: `[LIMITED] Analyze gross margin trends. Returns formula and structure only.
+      description: `[LIMITED] Returns the gross margin formula and an EMPTY periods array - NO margin data is fetched or computed. This tool makes no API calls; all arguments are echoed back in the output but not applied to any data.
 
 For actual margin data, use fortnox_account_activity with:
 - Revenue: account_range={from: 3000, to: 3999}
-- COGS: account_range={from: 4000, to: 4999}`,
+- COGS: account_range={from: 4000, to: 4999}
+
+Args:
+  - period ('today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year'): Echoed in the output only
+  - from_date (string): Start date YYYY-MM-DD (ignored if period specified). Echoed in the output only
+  - to_date (string): End date YYYY-MM-DD (ignored if period specified). Echoed in the output only
+  - group_by ('month' | 'quarter'): Echoed in the output only (default: 'month')
+  - revenue_accounts (string): Revenue account range, e.g. '3000-3999' (default: '3000-3999'). Echoed in the output only
+  - cogs_accounts (string): COGS account range, e.g. '4000-4999' (default: '4000-4999'). Echoed in the output only
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  For JSON: { period, date_range, group_by, account_ranges, note, periods: [] } - periods is always empty
+  For Markdown: The gross margin formula and the echoed parameters
+
+Error Handling:
+  - Returns "Error: ..." only on internal errors (no API calls are made)`,
       inputSchema: GrossMarginTrendSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
-        openWorldHint: true
+        // openWorldHint is false because this tool makes zero API calls:
+        // it only returns the margin formula and echoes its arguments.
+        openWorldHint: false
       }
     },
     async (params: GrossMarginTrendInput) => {

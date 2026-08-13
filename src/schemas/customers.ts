@@ -108,7 +108,7 @@ export const CreateCustomerSchema = z.object({
     .max(50)
     .optional()
     .describe("VAT registration number"),
-  vat_type: z.enum(["SEVAT", "EUVAT", "EUREVERSEDVAT", "EXPORT"])
+  vat_type: z.enum(["SEVAT", "SEREVERSEDVAT", "EUVAT", "EUREVERSEDVAT", "EXPORT"])
     .optional()
     .describe("VAT type for the customer"),
   terms_of_payment: z.string()

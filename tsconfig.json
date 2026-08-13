@@ -16,5 +16,7 @@
     "allowSyntheticDefaultImports": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  // src/worker is Workers-only (cloudflare:workers, KVNamespace) and is built
+  // by wrangler, not tsc. Typecheck it with tsconfig.worker.json.
+  "exclude": ["node_modules", "dist", "src/worker"]
 }

@@ -1,8 +1,16 @@
-import axios, { AxiosError } from "axios";
 import { FORTNOX_OAUTH_URL, TOKEN_REFRESH_BUFFER_MS } from "../constants.js";
 import { ITokenProvider, TokenInfo, AuthRequiredError } from "./types.js";
 import { ITokenStorage } from "./storage/types.js";
-import { getFortnoxCredentials } from "./credentials.js";
+import { FortnoxCredentials, getFortnoxCredentials } from "./credentials.js";
+import { HttpResponseError, basicAuthHeader, postForm } from "../services/http.js";
+
+interface FortnoxTokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+  scope: string;
+}
 
 // Fortnox rejects an expired or revoked refresh token with 400 invalid_grant.
 // Other 400s (invalid_request, invalid_client, unsupported_grant_type) mean the
@@ -10,11 +18,11 @@ import { getFortnoxCredentials } from "./credentials.js";
 // transient or configuration problems — none of those invalidate the user's
 // refresh token, so the error code has to be checked and not just the status.
 function isRefreshTokenRejected(error: unknown): boolean {
-  if (!(error instanceof AxiosError) || error.response?.status !== 400) {
+  if (!(error instanceof HttpResponseError) || error.status !== 400) {
     return false;
   }
 
-  const data = error.response.data;
+  const data = error.data;
   if (typeof data === "string") {
     return data.includes("invalid_grant");
   }
@@ -28,8 +36,14 @@ export class DatabaseTokenProvider implements ITokenProvider {
   private storage: ITokenStorage;
   private refreshPromises: Map<string, Promise<string>> = new Map();
 
-  constructor(storage: ITokenStorage) {
-    const { clientId, clientSecret } = getFortnoxCredentials();
+  /**
+   * @param credentials - Explicit Fortnox app credentials. Omit on Node to read
+   *   them from the environment; the Worker passes them in, because there the
+   *   secrets arrive on the `env` argument and module-scope process.env reads
+   *   would run before any of it is populated.
+   */
+  constructor(storage: ITokenStorage, credentials?: FortnoxCredentials) {
+    const { clientId, clientSecret } = credentials ?? getFortnoxCredentials();
     this.clientId = clientId;
     this.clientSecret = clientSecret;
     this.storage = storage;
@@ -90,35 +104,23 @@ export class DatabaseTokenProvider implements ITokenProvider {
     userId: string
   ): Promise<TokenInfo> {
     const tokenUrl = `${FORTNOX_OAUTH_URL}/token`;
-    const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64");
 
     try {
-      const response = await axios.post<{
-        access_token: string;
-        refresh_token: string;
-        token_type: string;
-        expires_in: number;
-        scope: string;
-      }>(
+      const data = await postForm<FortnoxTokenResponse>(
         tokenUrl,
         new URLSearchParams({
           grant_type: "authorization_code",
           code: code,
           redirect_uri: redirectUri
         }),
-        {
-          headers: {
-            "Authorization": `Basic ${auth}`,
-            "Content-Type": "application/x-www-form-urlencoded"
-          }
-        }
+        { Authorization: basicAuthHeader(this.clientId, this.clientSecret) }
       );
 
       const tokens: TokenInfo = {
-        accessToken: response.data.access_token,
-        refreshToken: response.data.refresh_token,
-        expiresAt: Date.now() + response.data.expires_in * 1000,
-        scope: response.data.scope
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        expiresAt: Date.now() + data.expires_in * 1000,
+        scope: data.scope
       };
 
       await this.storeTokens(userId, tokens);
@@ -134,34 +136,22 @@ export class DatabaseTokenProvider implements ITokenProvider {
     }
 
     const tokenUrl = `${FORTNOX_OAUTH_URL}/token`;
-    const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64");
 
     try {
-      const response = await axios.post<{
-        access_token: string;
-        refresh_token: string;
-        token_type: string;
-        expires_in: number;
-        scope: string;
-      }>(
+      const data = await postForm<FortnoxTokenResponse>(
         tokenUrl,
         new URLSearchParams({
           grant_type: "refresh_token",
           refresh_token: tokens.refreshToken
         }),
-        {
-          headers: {
-            "Authorization": `Basic ${auth}`,
-            "Content-Type": "application/x-www-form-urlencoded"
-          }
-        }
+        { Authorization: basicAuthHeader(this.clientId, this.clientSecret) }
       );
 
       const newTokens: TokenInfo = {
-        accessToken: response.data.access_token,
-        refreshToken: response.data.refresh_token,
-        expiresAt: Date.now() + response.data.expires_in * 1000,
-        scope: response.data.scope
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        expiresAt: Date.now() + data.expires_in * 1000,
+        scope: data.scope
       };
 
       await this.storeTokens(userId, newTokens);
@@ -213,9 +203,11 @@ export class DatabaseTokenProvider implements ITokenProvider {
   }
 
   private handleAuthError(error: unknown, context: string): Error {
-    if (error instanceof AxiosError) {
-      const status = error.response?.status;
-      const data = error.response?.data;
+    if (error instanceof HttpResponseError) {
+      const status = error.status;
+      const data = error.data as
+        | { error_description?: string; error?: string }
+        | undefined;
 
       if (status === 401) {
         return new Error(

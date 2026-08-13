@@ -94,13 +94,18 @@ Retrieves a paginated list of vouchers with optional filtering.
 IMPORTANT: The financial_year parameter uses Fortnox sequential IDs (1, 2, 3...), NOT calendar years.
 Use fortnox_list_financial_years first to find the correct ID for your target year.
 
+Note: The Fortnox API does not support date filtering on the vouchers list, so
+from_date/to_date are applied client-side on TransactionDate. When a date filter
+is given, all vouchers (up to safety caps) are fetched first, then filtered and
+paginated.
+
 Args:
   - limit (number): Max results per page, 1-100 (default: 20)
   - page (number): Page number for pagination (default: 1)
   - voucher_series (string): Filter by voucher series (e.g., 'A', 'B')
   - financial_year (number): Fortnox financial year ID (use fortnox_list_financial_years to find)
-  - from_date (string): Filter vouchers from this date (YYYY-MM-DD)
-  - to_date (string): Filter vouchers to this date (YYYY-MM-DD)
+  - from_date (string): Filter vouchers from this date (YYYY-MM-DD, applied client-side)
+  - to_date (string): Filter vouchers to this date (YYYY-MM-DD, applied client-side)
   - response_format ('markdown' | 'json'): Output format
 
 Returns:
@@ -121,25 +126,55 @@ Examples:
     async (params: ListVouchersInput) => {
       try {
         let endpoint = "/3/vouchers";
-        const queryParams: Record<string, string | number | boolean | undefined> = {
-          limit: params.limit,
-          page: params.page
-        };
 
         // Use sublist endpoint if filtering by series
         if (params.voucher_series) {
           endpoint = `/3/vouchers/sublist/${encodeURIComponent(params.voucher_series)}`;
         }
 
-        queryParams.financialyear = params.financial_year;
-        if (params.from_date) queryParams.fromdate = params.from_date;
-        if (params.to_date) queryParams.todate = params.to_date;
+        // The vouchers list endpoints only support the financialyear query
+        // parameter - fromdate/todate are silently ignored by Fortnox, so
+        // date filtering is applied client-side on TransactionDate.
+        let vouchers: FortnoxVoucherListItem[];
+        let total: number;
+        let truncated = false;
+        let truncationReason: string | undefined;
 
-        const response = await fortnoxRequest<VoucherListResponse>(endpoint, "GET", undefined, queryParams);
-        const vouchers = response.Vouchers || [];
-        const total = response.MetaInformation?.["@TotalResources"] || vouchers.length;
+        if (params.from_date || params.to_date) {
+          // The API cannot pre-filter by date, so fetch all vouchers (up to
+          // the safety caps), filter client-side, then paginate the filtered
+          // set.
+          const result = await fetchAllPages<FortnoxVoucherListItem, VoucherListResponse>(
+            endpoint,
+            { financialyear: params.financial_year },
+            (r) => r.Vouchers || [],
+            (r) => r.MetaInformation?.["@TotalResources"] || 0
+          );
 
-        const output = {
+          const filtered = result.items.filter((v) =>
+            (!params.from_date || v.TransactionDate >= params.from_date) &&
+            (!params.to_date || v.TransactionDate <= params.to_date)
+          );
+
+          total = filtered.length;
+          truncated = result.truncated;
+          truncationReason = result.truncationReason;
+
+          const start = (params.page - 1) * params.limit;
+          vouchers = filtered.slice(start, start + params.limit);
+        } else {
+          const queryParams: Record<string, string | number | boolean | undefined> = {
+            limit: params.limit,
+            page: params.page,
+            financialyear: params.financial_year
+          };
+
+          const response = await fortnoxRequest<VoucherListResponse>(endpoint, "GET", undefined, queryParams);
+          vouchers = response.Vouchers || [];
+          total = response.MetaInformation?.["@TotalResources"] || vouchers.length;
+        }
+
+        const output: Record<string, unknown> = {
           ...buildPaginationMeta(total, params.page, params.limit, vouchers.length),
           vouchers: vouchers.map((v) => ({
             voucher_series: v.VoucherSeries,
@@ -148,6 +183,11 @@ Examples:
             transaction_date: v.TransactionDate
           }))
         };
+
+        if (truncated) {
+          output.truncated = true;
+          output.truncation_reason = truncationReason;
+        }
 
         let textContent: string;
         if (params.response_format === ResponseFormat.JSON) {
@@ -161,6 +201,10 @@ Examples:
             params.limit,
             (v) => `- **${v.VoucherSeries}${v.VoucherNumber}** (${formatDisplayDate(v.TransactionDate)}): ${sanitizeInline(v.Description)}`
           );
+
+          if (truncated && truncationReason) {
+            textContent += `\n\n⚠️ **Note**: ${truncationReason}`;
+          }
         }
 
         return buildToolResponse(textContent, output);
@@ -281,6 +325,7 @@ Args:
     - Each row: { account_number, debit?, credit?, description?, cost_center?, project? }
   - cost_center (string): Default cost center for all rows
   - project (string): Default project for all rows
+  - response_format ('markdown' | 'json'): Output format
 
 Returns:
   The created voucher with assigned voucher number.
@@ -455,17 +500,19 @@ Common use cases:
 - Bank transactions: account_number=1930
 - Revenue analysis: account_range={ from: 3000, to: 3999 }
 
-Note: This tool fetches voucher details and filters client-side since the Fortnox API
-doesn't support native account filtering. Use date ranges to limit the scan.
+Note: This tool filters client-side since the Fortnox API supports neither account
+nor date filtering on vouchers. The voucher list is filtered by transaction date
+first, then details are fetched for up to max_vouchers of the date-filtered
+vouchers and matched against the account criteria. Use date ranges to limit the scan.
 
 Args:
   - account_number (number): Single account number to filter by (1000-9999)
   - account_numbers (array): Multiple account numbers to filter by (max 20)
   - account_range (object): Account range { from: 3000, to: 3999 }
   - financial_year (number): Fortnox financial year ID (use fortnox_list_financial_years to find)
-  - period ('today' | ... | 'last_year'): Convenience date period filter
-  - from_date (string): Filter vouchers from this date (YYYY-MM-DD)
-  - to_date (string): Filter vouchers to this date (YYYY-MM-DD)
+  - period ('today' | ... | 'last_year'): Convenience date period filter (applied client-side)
+  - from_date (string): Filter vouchers from this date (YYYY-MM-DD, applied client-side)
+  - to_date (string): Filter vouchers to this date (YYYY-MM-DD, applied client-side)
   - voucher_series (string): Filter by voucher series (e.g., 'A')
   - include_summary (boolean): Include totals per account (default: true)
   - max_vouchers (number): Max vouchers to scan, 10-500 (default: 500)
@@ -504,25 +551,31 @@ Examples:
           accountRangeTo = params.account_range.to;
         }
 
-        // Build query params
+        // Build query params. The vouchers list endpoints only support the
+        // financialyear query parameter - fromdate/todate are silently
+        // ignored by Fortnox, so dates are filtered client-side below.
         const queryParams: Record<string, string | number | boolean | undefined> = {
           financialyear: params.financial_year
         };
 
-        // Handle period convenience filter
+        // Resolve the requested date range (period convenience filter or
+        // explicit from_date/to_date)
+        let fromDate: string | undefined;
+        let toDate: string | undefined;
         let dateRangeDescription: string | undefined;
         if (params.period) {
           const dateRange = periodToDateRange(params.period);
-          queryParams.fromdate = dateRange.from_date;
-          queryParams.todate = dateRange.to_date;
+          fromDate = dateRange.from_date;
+          toDate = dateRange.to_date;
           dateRangeDescription = getPeriodDescription(params.period);
         } else {
-          if (params.from_date) queryParams.fromdate = params.from_date;
-          if (params.to_date) queryParams.todate = params.to_date;
-          if (params.from_date || params.to_date) {
-            dateRangeDescription = `${params.from_date || "start"} to ${params.to_date || "end"}`;
+          fromDate = params.from_date;
+          toDate = params.to_date;
+          if (fromDate || toDate) {
+            dateRangeDescription = `${fromDate || "start"} to ${toDate || "end"}`;
           }
         }
+        const hasDateFilter = fromDate !== undefined || toDate !== undefined;
 
         // Determine endpoint based on series filter
         let endpoint = "/3/vouchers";
@@ -530,16 +583,38 @@ Examples:
           endpoint = `/3/vouchers/sublist/${encodeURIComponent(params.voucher_series)}`;
         }
 
-        // Fetch voucher list
+        // Fetch voucher list. With a date filter the max_vouchers cap must
+        // apply to the date-filtered set, so fetch the full list (up to the
+        // safety caps) and filter before capping; otherwise cap the fetch
+        // directly.
         const result = await fetchAllPages<FortnoxVoucherListItem, VoucherListResponse>(
           endpoint,
           queryParams,
           (r) => r.Vouchers || [],
           (r) => r.MetaInformation?.["@TotalResources"] || 0,
-          { maxResults: params.max_vouchers, maxPages: Math.ceil(params.max_vouchers / 100) }
+          hasDateFilter
+            ? undefined
+            : { maxResults: params.max_vouchers, maxPages: Math.ceil(params.max_vouchers / 100) }
         );
 
-        const voucherList = result.items;
+        // Filter the list by transaction date BEFORE selecting which
+        // vouchers to fetch details for, so max_vouchers applies to the
+        // date-filtered set
+        let voucherList = result.items;
+        let listTruncated = result.truncated;
+        let listTruncationReason = result.truncationReason;
+        if (hasDateFilter) {
+          voucherList = voucherList.filter((v) =>
+            (!fromDate || v.TransactionDate >= fromDate) &&
+            (!toDate || v.TransactionDate <= toDate)
+          );
+          if (voucherList.length > params.max_vouchers) {
+            voucherList = voucherList.slice(0, params.max_vouchers);
+            listTruncated = true;
+            listTruncationReason = `Reached maximum result limit (${params.max_vouchers} vouchers in the date range). Increase max_vouchers or narrow the date range.`;
+          }
+        }
+
         const totalVouchers = result.total;
 
         // Helper to check if account matches filter
@@ -651,8 +726,8 @@ Examples:
           vouchers_scanned: voucherList.length,
           total_vouchers_available: totalVouchers,
           total_vouchers_available_is_exact: result.totalIsExact,
-          truncated: result.truncated,
-          truncation_reason: result.truncationReason,
+          truncated: listTruncated,
+          truncation_reason: listTruncationReason,
           matching_transactions: matchingTransactions.length,
           summary: summaryArray,
           transactions: matchingTransactions
@@ -680,9 +755,9 @@ Examples:
           lines.push(`**Financial Year**: ${params.financial_year}`);
           lines.push(`**Vouchers Scanned**: ${voucherList.length} | **Matching Transactions**: ${matchingTransactions.length}`);
 
-          if (result.truncated) {
+          if (listTruncated) {
             lines.push("");
-            lines.push(`⚠️ **Note**: ${result.truncationReason}`);
+            lines.push(`⚠️ **Note**: ${listTruncationReason}`);
           }
 
           if (summaryArray && summaryArray.length > 0) {
@@ -743,17 +818,21 @@ Examples:
 IMPORTANT: The financial_year parameter uses Fortnox sequential IDs (1, 2, 3...), NOT calendar years.
 Use fortnox_list_financial_years first to find the correct ID for your target year.
 
-Performs client-side text search across voucher descriptions.
+Performs client-side text search across voucher descriptions. Date filtering
+(period/from_date/to_date) is also applied client-side on the voucher list, since
+the Fortnox API does not support date filtering on vouchers.
 
 Args:
   - search_text (string): Text to search for in voucher descriptions (min 2 chars)
   - financial_year (number): Fortnox financial year ID (use fortnox_list_financial_years to find)
-  - period ('today' | ... | 'last_year'): Convenience date period filter
-  - from_date (string): Filter vouchers from this date (YYYY-MM-DD)
-  - to_date (string): Filter vouchers to this date (YYYY-MM-DD)
+  - period ('today' | ... | 'last_year'): Convenience date period filter (applied client-side)
+  - from_date (string): Filter vouchers from this date (YYYY-MM-DD, applied client-side)
+  - to_date (string): Filter vouchers to this date (YYYY-MM-DD, applied client-side)
   - voucher_series (string): Filter by voucher series (e.g., 'A')
   - case_sensitive (boolean): Case-sensitive search (default: false)
-  - include_rows (boolean): Include voucher row details (default: false)
+  - include_rows (boolean): Also search row descriptions and include voucher row
+    details in results. This broadens the search: vouchers whose row descriptions
+    match are included even if the voucher description does not (default: false)
   - max_vouchers (number): Max vouchers to scan, 10-500 (default: 500)
   - response_format ('markdown' | 'json'): Output format
 
@@ -774,25 +853,31 @@ Examples:
     },
     async (params: SearchVouchersInput) => {
       try {
-        // Build query params
+        // Build query params. The vouchers list endpoints only support the
+        // financialyear query parameter - fromdate/todate are silently
+        // ignored by Fortnox, so dates are filtered client-side below.
         const queryParams: Record<string, string | number | boolean | undefined> = {
           financialyear: params.financial_year
         };
 
-        // Handle period convenience filter
+        // Resolve the requested date range (period convenience filter or
+        // explicit from_date/to_date)
+        let fromDate: string | undefined;
+        let toDate: string | undefined;
         let dateRangeDescription: string | undefined;
         if (params.period) {
           const dateRange = periodToDateRange(params.period);
-          queryParams.fromdate = dateRange.from_date;
-          queryParams.todate = dateRange.to_date;
+          fromDate = dateRange.from_date;
+          toDate = dateRange.to_date;
           dateRangeDescription = getPeriodDescription(params.period);
         } else {
-          if (params.from_date) queryParams.fromdate = params.from_date;
-          if (params.to_date) queryParams.todate = params.to_date;
-          if (params.from_date || params.to_date) {
-            dateRangeDescription = `${params.from_date || "start"} to ${params.to_date || "end"}`;
+          fromDate = params.from_date;
+          toDate = params.to_date;
+          if (fromDate || toDate) {
+            dateRangeDescription = `${fromDate || "start"} to ${toDate || "end"}`;
           }
         }
+        const hasDateFilter = fromDate !== undefined || toDate !== undefined;
 
         // Determine endpoint based on series filter
         let endpoint = "/3/vouchers";
@@ -800,16 +885,38 @@ Examples:
           endpoint = `/3/vouchers/sublist/${encodeURIComponent(params.voucher_series)}`;
         }
 
-        // Fetch voucher list
+        // Fetch voucher list. With a date filter the max_vouchers cap must
+        // apply to the date-filtered set, so fetch the full list (up to the
+        // safety caps) and filter before capping; otherwise cap the fetch
+        // directly.
         const result = await fetchAllPages<FortnoxVoucherListItem, VoucherListResponse>(
           endpoint,
           queryParams,
           (r) => r.Vouchers || [],
           (r) => r.MetaInformation?.["@TotalResources"] || 0,
-          { maxResults: params.max_vouchers, maxPages: Math.ceil(params.max_vouchers / 100) }
+          hasDateFilter
+            ? undefined
+            : { maxResults: params.max_vouchers, maxPages: Math.ceil(params.max_vouchers / 100) }
         );
 
-        const voucherList = result.items;
+        // Filter the list by transaction date BEFORE selecting which
+        // vouchers to search and fetch details for, so max_vouchers applies
+        // to the date-filtered set
+        let voucherList = result.items;
+        let listTruncated = result.truncated;
+        let listTruncationReason = result.truncationReason;
+        if (hasDateFilter) {
+          voucherList = voucherList.filter((v) =>
+            (!fromDate || v.TransactionDate >= fromDate) &&
+            (!toDate || v.TransactionDate <= toDate)
+          );
+          if (voucherList.length > params.max_vouchers) {
+            voucherList = voucherList.slice(0, params.max_vouchers);
+            listTruncated = true;
+            listTruncationReason = `Reached maximum result limit (${params.max_vouchers} vouchers in the date range). Increase max_vouchers or narrow the date range.`;
+          }
+        }
+
         const totalVouchers = result.total;
 
         // Prepare search
@@ -921,8 +1028,8 @@ Examples:
           vouchers_scanned: voucherList.length,
           total_vouchers_available: totalVouchers,
           total_vouchers_available_is_exact: result.totalIsExact,
-          truncated: result.truncated,
-          truncation_reason: result.truncationReason,
+          truncated: listTruncated,
+          truncation_reason: listTruncationReason,
           matching_count: matchingVouchers.length,
           vouchers: matchingVouchers
         };
@@ -943,9 +1050,9 @@ Examples:
           lines.push(`**Financial Year**: ${params.financial_year}`);
           lines.push(`**Vouchers Scanned**: ${voucherList.length} | **Matches**: ${matchingVouchers.length}`);
 
-          if (result.truncated) {
+          if (listTruncated) {
             lines.push("");
-            lines.push(`⚠️ **Note**: ${result.truncationReason}`);
+            lines.push(`⚠️ **Note**: ${listTruncationReason}`);
           }
 
           if (matchingVouchers.length > 0) {

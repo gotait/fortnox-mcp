@@ -1,0 +1,51 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fortnox-mcp",
+  "main": "src/worker/index.ts",
+
+  // nodejs_compat provides async_hooks (AsyncLocalStorage), which carries the
+  // per-request user id down to the Fortnox API client. The 2025-04-01+
+  // compatibility date also populates process.env from vars and secrets, which
+  // the read-only mode check relies on.
+  "compatibility_date": "2025-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "kv_namespaces": [
+    {
+      // Binding name is fixed by @cloudflare/workers-oauth-provider.
+      // Holds clients, grants, authorization codes and issued tokens.
+      "binding": "OAUTH_KV",
+      "id": "90ce2b278ef4455db5d4d4069566e126"
+    },
+    {
+      // Fortnox access/refresh tokens plus short-lived pending authorizations.
+      "binding": "FORTNOX_TOKENS",
+      "id": "c2a25fb852414df89b2859ea9d32f414"
+    }
+  ],
+
+  // Non-secret configuration. Editing these requires a redeploy; change them
+  // without one from the dashboard (Workers > fortnox-mcp > Settings >
+  // Variables) or with `wrangler deploy --var NAME:value`.
+  "vars": {
+    // "true"  -> only the 34 read-only tools are registered
+    // "false" -> all 51, including create/update/delete/approve/bookkeep
+    "FORTNOX_READ_ONLY": "true",
+
+    // Scopes requested from Fortnox, space- or comma-separated. Must be a
+    // subset of what the Fortnox app grants: requesting one it does not have
+    // fails the whole authorization with "unsupported scope". One entry per
+    // endpoint family the tools call - see FORTNOX_SCOPES in
+    // src/auth/credentials.ts for the mapping.
+    "FORTNOX_SCOPES": "bookkeeping companyinformation costcenter customer invoice offer order project supplier supplierinvoice"
+  },
+
+  // Secrets - never put these in vars, they would be readable in the
+  // dashboard and committed to git:
+  //   npx wrangler secret put FORTNOX_CLIENT_ID
+  //   npx wrangler secret put FORTNOX_CLIENT_SECRET
+
+  "observability": {
+    "enabled": true
+  }
+}

@@ -108,7 +108,7 @@ That's it! You can now ask Claude to manage your Fortnox invoices, customers, an
 - `fortnox_get_supplier` - Get supplier details
 - `fortnox_create_supplier` - Create new supplier
 - `fortnox_update_supplier` - Update supplier
-- `fortnox_delete_supplier` - Delete supplier
+- `fortnox_deactivate_supplier` - Deactivate supplier (Fortnox does not support deleting suppliers)
 
 ### Supplier Invoice Management
 - `fortnox_list_supplier_invoices` - List supplier invoices with filtering
@@ -401,6 +401,89 @@ https://your-app.vercel.app/oauth/fortnox/callback
 ```bash
 vercel --prod
 ```
+
+### Deploy to Cloudflare Workers
+
+Runs the same tools on Workers, with OAuth grants and Fortnox tokens in KV
+instead of Upstash Redis. There are no Durable Objects and no session state:
+each request builds a server, answers, and discards it.
+
+#### 1. Prerequisites
+
+- A [Cloudflare](https://dash.cloudflare.com) account
+- A [Fortnox Developer](https://developer.fortnox.se) account with an app created
+
+#### 2. Create the KV namespaces
+
+```bash
+npx wrangler kv namespace create OAUTH_KV
+npx wrangler kv namespace create FORTNOX_TOKENS
+```
+
+Put the two returned ids into `wrangler.jsonc`. `OAUTH_KV` holds clients,
+grants and issued tokens (the binding name is required by
+`@cloudflare/workers-oauth-provider`); `FORTNOX_TOKENS` holds the upstream
+Fortnox tokens and short-lived pending authorizations.
+
+#### 3. Set the secrets
+
+```bash
+npx wrangler secret put FORTNOX_CLIENT_ID
+npx wrangler secret put FORTNOX_CLIENT_SECRET
+```
+
+Until both are set, `/authorize` answers `503` rather than sending users to a
+broken Fortnox URL. No `JWT_SECRET` is needed - the OAuth library issues and
+verifies its own tokens.
+
+#### 4. Deploy
+
+```bash
+npm run cf:deploy
+```
+
+#### 5. Configure the Fortnox OAuth callback
+
+In your Fortnox app settings, add the redirect URI:
+
+```
+https://<worker>.<subdomain>.workers.dev/oauth/fortnox/callback
+```
+
+#### Configuration
+
+Everything is driven by the environment. Secrets go through
+`wrangler secret put`; the rest live in `vars` in `wrangler.jsonc`.
+
+| Variable | Kind | Default | Description |
+|----------|------|---------|-------------|
+| `FORTNOX_CLIENT_ID` | secret | — | Fortnox app client ID |
+| `FORTNOX_CLIENT_SECRET` | secret | — | Fortnox app client secret |
+| `FORTNOX_READ_ONLY` | var | `"true"` | `"true"` registers only the 34 read tools; `"false"` exposes all 51, including create/update/delete/approve/bookkeep/cancel/credit/send-email |
+| `FORTNOX_SCOPES` | var | the five below | Scopes requested from Fortnox, space- or comma-separated. Must be a subset of what the app grants |
+
+Default scopes: `companyinformation customer invoice supplier bookkeeping`.
+
+Changing a `var` takes effect on the next deploy. To change one without
+editing the file, use the dashboard (**Workers → fortnox-mcp → Settings →
+Variables**) or:
+
+```bash
+npx wrangler deploy --var FORTNOX_READ_ONLY:false
+```
+
+Never put the client secret in `vars` - those are readable in the dashboard
+and committed to git.
+
+#### Local development
+
+```bash
+npm run cf:dev          # wrangler dev, with local KV simulation
+npm run typecheck:worker
+```
+
+Put development credentials in `.dev.vars` (gitignored); `src/worker` is
+excluded from the Node `tsc` build and typechecked separately.
 
 ### Server Endpoints
 
