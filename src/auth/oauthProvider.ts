@@ -14,6 +14,7 @@ import {
 import { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { InvalidClientMetadataError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { ITokenStorage } from "./storage/types.js";
+import { IStateStore } from "./storage/stateStore.js";
 import { DatabaseTokenProvider } from "./databaseProvider.js";
 import { FORTNOX_SCOPES } from "./credentials.js";
 
@@ -22,11 +23,20 @@ const JWT_ALGORITHM = "HS256";
 const ACCESS_TOKEN_EXPIRES_IN = 3600; // 1 hour
 const REFRESH_TOKEN_EXPIRES_IN = 90 * 24 * 3600; // 90 days
 
-// Links MCP <-> Fortnox OAuth
+// OAuth flow state lifetimes
+const PENDING_AUTH_TTL_SECONDS = 10 * 60;
+const AUTH_CODE_TTL_SECONDS = 5 * 60;
+// Client registrations must outlive the refresh tokens issued to them
+const CLIENT_TTL_SECONDS = REFRESH_TOKEN_EXPIRES_IN;
+
+// Links MCP <-> Fortnox OAuth. Only JSON-serializable fields, since this
+// round-trips through the state store.
 interface PendingAuthorization {
-  mcpClient: OAuthClientInformationFull;
-  mcpParams: AuthorizationParams;
+  clientId: string;
   codeChallenge: string;
+  redirectUri: string;
+  scopes: string[];
+  mcpState?: string;
   createdAt: number;
 }
 
@@ -51,17 +61,18 @@ interface IssuedCode {
  * 6. Claude exchanges our auth code for our JWT access token
  * 7. Claude uses our JWT for /mcp requests
  * 8. We verify JWT and use stored Fortnox tokens for API calls
+ *
+ * All flow state (pending authorizations, issued codes, revocations,
+ * registered clients) lives in the state store, so the flow and token
+ * revocation work across restarts and multiple instances when a shared
+ * store (Redis) is configured.
  */
 export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
   private jwtSecret: Uint8Array;
   private serverUrl: string;
   private tokenProvider: DatabaseTokenProvider;
-  private _clientsStore: InMemoryClientsStore;
-
-  // State storage (should use Redis/DB in production)
-  private pendingAuthorizations: Map<string, PendingAuthorization> = new Map();
-  private issuedCodes: Map<string, IssuedCode> = new Map();
-  private revokedTokens: Set<string> = new Set();
+  private stateStore: IStateStore;
+  private _clientsStore: StateStoreClientsStore;
 
   // Skip local PKCE validation since we handle it ourselves
   skipLocalPkceValidation = false;
@@ -69,7 +80,8 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
   constructor(
     jwtSecret: string,
     serverUrl: string,
-    tokenStorage: ITokenStorage
+    tokenStorage: ITokenStorage,
+    stateStore: IStateStore
   ) {
     if (jwtSecret.length < 32) {
       throw new Error(
@@ -81,7 +93,8 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
     this.jwtSecret = new TextEncoder().encode(jwtSecret);
     this.serverUrl = serverUrl;
     this.tokenProvider = new DatabaseTokenProvider(tokenStorage);
-    this._clientsStore = new InMemoryClientsStore();
+    this.stateStore = stateStore;
+    this._clientsStore = new StateStoreClientsStore(stateStore);
   }
 
   get clientsStore(): OAuthRegisteredClientsStore {
@@ -100,16 +113,20 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
     // Generate state to link MCP request to Fortnox OAuth
     const oauthState = crypto.randomUUID();
 
-    // Store pending authorization
-    this.pendingAuthorizations.set(oauthState, {
-      mcpClient: client,
-      mcpParams: params,
+    // Store pending authorization; the TTL bounds the flow's lifetime
+    const pending: PendingAuthorization = {
+      clientId: client.client_id,
       codeChallenge: params.codeChallenge,
+      redirectUri: params.redirectUri,
+      scopes: params.scopes || [],
+      mcpState: params.state,
       createdAt: Date.now(),
-    });
-
-    // Clean up old pending authorizations (older than 10 minutes)
-    this.cleanupPendingAuthorizations();
+    };
+    await this.stateStore.set(
+      `pending_auth:${oauthState}`,
+      pending,
+      PENDING_AUTH_TTL_SECONDS
+    );
 
     // Redirect to Fortnox OAuth
     const fortnoxAuthUrl = this.tokenProvider.getAuthorizationUrl(
@@ -126,17 +143,19 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
     state: string
   ): Promise<{ redirectUri: string; code: string; state?: string }> {
     // Look up pending authorization
-    const pending = this.pendingAuthorizations.get(state);
+    const pending = await this.stateStore.get<PendingAuthorization>(
+      `pending_auth:${state}`
+    );
     if (!pending) {
       throw new Error("Invalid or expired OAuth state");
     }
 
-    // Remove from pending
-    this.pendingAuthorizations.delete(state);
+    // Remove from pending so the state is single-use
+    await this.stateStore.delete(`pending_auth:${state}`);
 
     // Exchange Fortnox code for tokens
     // Generate a unique user ID based on client ID and a random component
-    const userId = `${pending.mcpClient.client_id}:${crypto.randomUUID()}`;
+    const userId = `${pending.clientId}:${crypto.randomUUID()}`;
 
     await this.tokenProvider.exchangeAuthorizationCode(
       code,
@@ -146,22 +165,24 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
 
     // Issue our own authorization code
     const mcpAuthCode = crypto.randomUUID();
-    this.issuedCodes.set(mcpAuthCode, {
+    const issued: IssuedCode = {
       userId,
-      clientId: pending.mcpClient.client_id,
+      clientId: pending.clientId,
       codeChallenge: pending.codeChallenge,
-      redirectUri: pending.mcpParams.redirectUri,
-      scopes: pending.mcpParams.scopes || [],
+      redirectUri: pending.redirectUri,
+      scopes: pending.scopes,
       createdAt: Date.now(),
-    });
-
-    // Clean up old codes
-    this.cleanupIssuedCodes();
+    };
+    await this.stateStore.set(
+      `auth_code:${mcpAuthCode}`,
+      issued,
+      AUTH_CODE_TTL_SECONDS
+    );
 
     return {
-      redirectUri: pending.mcpParams.redirectUri,
+      redirectUri: pending.redirectUri,
       code: mcpAuthCode,
-      state: pending.mcpParams.state,
+      state: pending.mcpState,
     };
   }
 
@@ -169,7 +190,9 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
     _client: OAuthClientInformationFull,
     authorizationCode: string
   ): Promise<string> {
-    const issued = this.issuedCodes.get(authorizationCode);
+    const issued = await this.stateStore.get<IssuedCode>(
+      `auth_code:${authorizationCode}`
+    );
     if (!issued) {
       throw new Error("Invalid authorization code");
     }
@@ -183,7 +206,9 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
     _redirectUri?: string,
     _resource?: URL
   ): Promise<OAuthTokens> {
-    const issued = this.issuedCodes.get(authorizationCode);
+    const issued = await this.stateStore.get<IssuedCode>(
+      `auth_code:${authorizationCode}`
+    );
     if (!issued) {
       throw new Error("Invalid authorization code");
     }
@@ -194,10 +219,10 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
     }
 
     // Remove used code
-    this.issuedCodes.delete(authorizationCode);
+    await this.stateStore.delete(`auth_code:${authorizationCode}`);
 
-    // Check if code is expired (5 minutes)
-    if (Date.now() - issued.createdAt > 5 * 60 * 1000) {
+    // Check if code is expired (5 minutes); the store TTL also enforces this
+    if (Date.now() - issued.createdAt > AUTH_CODE_TTL_SECONDS * 1000) {
       throw new Error("Authorization code expired");
     }
 
@@ -219,7 +244,7 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
     }
 
     // Check if revoked
-    if (this.revokedTokens.has(refreshToken)) {
+    if (await this.isRevoked(refreshToken)) {
       throw new Error("Token has been revoked");
     }
 
@@ -233,7 +258,7 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
     // Check if revoked
-    if (this.revokedTokens.has(token)) {
+    if (await this.isRevoked(token)) {
       throw new Error("Token has been revoked");
     }
 
@@ -254,7 +279,35 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
     _client: OAuthClientInformationFull,
     request: OAuthTokenRevocationRequest
   ): Promise<void> {
-    this.revokedTokens.add(request.token);
+    // Determine the token's remaining lifetime so the revocation record
+    // outlives it; tokens that don't verify can't be used, so there is
+    // nothing to revoke.
+    let ttlSeconds: number;
+    try {
+      const { payload } = await jose.jwtVerify(request.token, this.jwtSecret, {
+        issuer: this.serverUrl,
+        algorithms: [JWT_ALGORITHM],
+      });
+      const exp =
+        typeof payload.exp === "number"
+          ? payload.exp
+          : Math.floor(Date.now() / 1000) + REFRESH_TOKEN_EXPIRES_IN;
+      ttlSeconds = Math.max(exp - Math.floor(Date.now() / 1000), 60);
+    } catch {
+      return;
+    }
+
+    await this.stateStore.set(this.revocationKey(request.token), true, ttlSeconds);
+  }
+
+  private async isRevoked(token: string): Promise<boolean> {
+    return (await this.stateStore.get<boolean>(this.revocationKey(token))) === true;
+  }
+
+  private revocationKey(token: string): string {
+    // Store a digest rather than the raw token
+    const digest = crypto.createHash("sha256").update(token).digest("hex");
+    return `revoked:${digest}`;
   }
 
   private async issueTokens(
@@ -331,28 +384,6 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
       throw new Error("Invalid token");
     }
   }
-
-  private cleanupPendingAuthorizations(): void {
-    const maxAge = 10 * 60 * 1000; // 10 minutes
-    const now = Date.now();
-
-    for (const [state, pending] of this.pendingAuthorizations) {
-      if (now - pending.createdAt > maxAge) {
-        this.pendingAuthorizations.delete(state);
-      }
-    }
-  }
-
-  private cleanupIssuedCodes(): void {
-    const maxAge = 5 * 60 * 1000; // 5 minutes
-    const now = Date.now();
-
-    for (const [code, issued] of this.issuedCodes) {
-      if (now - issued.createdAt > maxAge) {
-        this.issuedCodes.delete(code);
-      }
-    }
-  }
 }
 
 // RFC 8252 lets native clients use any loopback address, not just 127.0.0.1
@@ -425,17 +456,21 @@ function validateRedirectUris(redirectUris: string[] | undefined): void {
   }
 }
 
-// Dynamic client registration store
-class InMemoryClientsStore implements OAuthRegisteredClientsStore {
-  private clients: Map<string, OAuthClientInformationFull> = new Map();
+// Dynamic client registration store, backed by the shared state store so
+// registrations survive restarts and are visible to all instances
+class StateStoreClientsStore implements OAuthRegisteredClientsStore {
+  constructor(private stateStore: IStateStore) {}
 
-  getClient(clientId: string): OAuthClientInformationFull | undefined {
-    return this.clients.get(clientId);
+  async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
+    const client = await this.stateStore.get<OAuthClientInformationFull>(
+      `client:${clientId}`
+    );
+    return client ?? undefined;
   }
 
-  registerClient(
+  async registerClient(
     client: Omit<OAuthClientInformationFull, "client_id" | "client_id_issued_at">
-  ): OAuthClientInformationFull {
+  ): Promise<OAuthClientInformationFull> {
     validateRedirectUris(client.redirect_uris);
 
     const clientId = `client_${crypto.randomUUID()}`;
@@ -445,7 +480,7 @@ class InMemoryClientsStore implements OAuthRegisteredClientsStore {
       client_id_issued_at: Math.floor(Date.now() / 1000),
     };
 
-    this.clients.set(clientId, fullClient);
+    await this.stateStore.set(`client:${clientId}`, fullClient, CLIENT_TTL_SECONDS);
     return fullClient;
   }
 }

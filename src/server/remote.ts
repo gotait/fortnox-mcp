@@ -21,21 +21,25 @@ import { registerAnalyticsTools } from "../tools/analytics.js";
 import { registerOrderTools } from "../tools/orders.js";
 import { registerBIAnalyticsTools } from "../tools/biAnalytics.js";
 import { ITokenStorage } from "../auth/storage/types.js";
+import { IStateStore, getStateStoreFromEnv } from "../auth/storage/stateStore.js";
 
 export interface RemoteServerOptions {
   serverUrl: string;
   jwtSecret: string;
   tokenStorage: ITokenStorage;
+  stateStore?: IStateStore;
   port?: number;
 }
 
 export function createRemoteServer(options: RemoteServerOptions): Express {
   const { serverUrl, jwtSecret, tokenStorage } = options;
+  const stateStore = options.stateStore || getStateStoreFromEnv();
 
   const oauthProvider = new FortnoxProxyOAuthProvider(
     jwtSecret,
     serverUrl,
-    tokenStorage
+    tokenStorage,
+    stateStore
   );
 
   initializeTokenProvider(oauthProvider.getTokenProvider());
