@@ -428,7 +428,7 @@ Returns:
       inputSchema: ApproveSupplierInvoiceSchema,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: false,
         openWorldHint: true
       }
