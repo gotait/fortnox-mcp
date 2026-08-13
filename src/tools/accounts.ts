@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { fortnoxRequest } from "../services/api.js";
+import { fortnoxRequest, fetchAllPages } from "../services/api.js";
 import { ResponseFormat } from "../constants.js";
 import {
   buildToolResponse,
@@ -70,12 +70,16 @@ export function registerAccountTools(server: McpServer): void {
 
 Retrieves a paginated list of accounts with optional filtering.
 
+Note: The Fortnox API does not support these filters, so search_description,
+from_account, and to_account are applied client-side: all accounts are fetched
+first, then filtered and paginated locally.
+
 Args:
   - limit (number): Max results per page, 1-100 (default: 20)
   - page (number): Page number for pagination (default: 1)
-  - search_description (string): Search accounts by description
-  - from_account (number): Filter accounts from this number (1000-9999)
-  - to_account (number): Filter accounts to this number (1000-9999)
+  - search_description (string): Search accounts by description, case-insensitive substring (client-side)
+  - from_account (number): Filter accounts from this number, 1000-9999 (client-side)
+  - to_account (number): Filter accounts to this number, 1000-9999 (client-side)
   - response_format ('markdown' | 'json'): Output format
 
 Returns:
@@ -94,21 +98,57 @@ Examples:
     },
     async (params: ListAccountsInput) => {
       try {
-        const queryParams: Record<string, string | number | boolean | undefined> = {
-          limit: params.limit,
-          page: params.page
-        };
+        const hasClientFilters =
+          params.search_description !== undefined ||
+          params.from_account !== undefined ||
+          params.to_account !== undefined;
 
-        if (params.search_description) queryParams.description = params.search_description;
-        if (params.from_account) queryParams.fromaccount = params.from_account;
-        if (params.to_account) queryParams.toaccount = params.to_account;
+        let accounts: FortnoxAccountListItem[];
+        let total: number;
+        let truncated = false;
+        let truncationReason: string | undefined;
 
-        const response = await fortnoxRequest<AccountListResponse>("/3/accounts", "GET", undefined, queryParams);
-        const accounts = response.Accounts || [];
-        const total = response.MetaInformation?.["@TotalResources"] || accounts.length;
+        if (hasClientFilters) {
+          // The Fortnox API does not support these filters, so fetch all
+          // accounts and filter client-side.
+          const result = await fetchAllPages<FortnoxAccountListItem, AccountListResponse>(
+            "/3/accounts",
+            {},
+            (r) => r.Accounts || [],
+            (r) => r.MetaInformation?.["@TotalResources"] || 0
+          );
+          truncated = result.truncated;
+          truncationReason = result.truncationReason;
+
+          let filtered = result.items;
+          if (params.search_description !== undefined) {
+            const needle = params.search_description.toLowerCase();
+            filtered = filtered.filter((a) => (a.Description || "").toLowerCase().includes(needle));
+          }
+          if (params.from_account !== undefined) {
+            filtered = filtered.filter((a) => a.Number >= params.from_account!);
+          }
+          if (params.to_account !== undefined) {
+            filtered = filtered.filter((a) => a.Number <= params.to_account!);
+          }
+
+          total = filtered.length;
+          const start = (params.page - 1) * params.limit;
+          accounts = filtered.slice(start, start + params.limit);
+        } else {
+          const queryParams: Record<string, string | number | boolean | undefined> = {
+            limit: params.limit,
+            page: params.page
+          };
+
+          const response = await fortnoxRequest<AccountListResponse>("/3/accounts", "GET", undefined, queryParams);
+          accounts = response.Accounts || [];
+          total = response.MetaInformation?.["@TotalResources"] || accounts.length;
+        }
 
         const output = {
           ...buildPaginationMeta(total, params.page, params.limit, accounts.length),
+          ...(truncated ? { truncated, truncation_reason: truncationReason } : {}),
           accounts: accounts.map((a) => ({
             account_number: a.Number,
             description: a.Description,
@@ -217,6 +257,7 @@ Args:
   - cost_center_settings ('ALLOWED' | 'MANDATORY' | 'NOTALLOWED'): Cost center settings
   - project_settings ('ALLOWED' | 'MANDATORY' | 'NOTALLOWED'): Project settings
   - sru_code (number): SRU code for tax reporting
+  - response_format ('markdown' | 'json'): Output format
 
 Returns:
   The created account details.`,
@@ -286,6 +327,7 @@ Args:
   - active (boolean): Whether the account is active
   - cost_center_settings ('ALLOWED' | 'MANDATORY' | 'NOTALLOWED'): Cost center settings
   - project_settings ('ALLOWED' | 'MANDATORY' | 'NOTALLOWED'): Project settings
+  - response_format ('markdown' | 'json'): Output format
 
 Returns:
   The updated account details.`,
@@ -356,7 +398,7 @@ Returns:
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
-        idempotentHint: false,
+        idempotentHint: true,
         openWorldHint: true
       }
     },

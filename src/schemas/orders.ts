@@ -20,6 +20,8 @@ export type OrderFilter = z.infer<typeof OrderFilterEnum>;
 export const OfferFilterEnum = z.enum([
   "cancelled",
   "expired",
+  "completed",
+  "notcompleted",
   "ordercreated",
   "ordernotcreated"
 ]);
@@ -43,7 +45,7 @@ export const ListOrdersSchema = z.object({
     .describe("Page number for pagination"),
   filter: OrderFilterEnum
     .optional()
-    .describe("Filter orders by status: 'cancelled', 'expired', 'invoicecreated', 'invoicenotcreated'"),
+    .describe("Filter orders by status: 'cancelled' (order was cancelled), 'expired' (order has expired), 'invoicecreated' (an invoice was created from the order), 'invoicenotcreated' (no invoice has been created from the order)"),
   customer_number: z.string()
     .max(50)
     .optional()
@@ -106,7 +108,7 @@ export const ListOffersSchema = z.object({
     .describe("Page number for pagination"),
   filter: OfferFilterEnum
     .optional()
-    .describe("Filter offers by status: 'cancelled', 'expired', 'ordercreated', 'ordernotcreated'"),
+    .describe("Filter offers by status: 'cancelled' (offer was cancelled), 'expired' (offer has expired), 'completed' (offer is completed), 'notcompleted' (offer is not completed), 'ordercreated' (an order was created from the offer), 'ordernotcreated' (no order has been created from the offer)"),
   customer_number: z.string()
     .max(50)
     .optional()
@@ -122,9 +124,9 @@ export const ListOffersSchema = z.object({
   period: DatePeriodEnum
     .optional()
     .describe("Convenience date period filter (e.g., 'last_month', 'this_quarter'). Overrides from_date/to_date if provided."),
-  sortby: z.enum(["customername", "customernumber", "documentnumber", "offerdate", "total"])
+  sortby: z.enum(["customerName", "id", "transactionDate", "total"])
     .optional()
-    .describe("Field to sort results by"),
+    .describe("Field to sort results by. Values are case-sensitive and differ from the orders endpoint: 'customerName', 'id', 'transactionDate', 'total'"),
   sortorder: z.enum(["ascending", "descending"])
     .default("ascending")
     .describe("Sort order for results"),

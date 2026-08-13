@@ -252,10 +252,11 @@ Args:
   - address1, address2, zip_code, city, country, country_code: Address fields
   - currency (string): 3-letter currency code (e.g., 'SEK')
   - vat_number (string): VAT registration number
-  - vat_type ('SEVAT' | 'EUVAT' | 'EUREVERSEDVAT' | 'EXPORT'): VAT type
+  - vat_type ('SEVAT' | 'SEREVERSEDVAT' | 'EUVAT' | 'EUREVERSEDVAT' | 'EXPORT'): VAT type
   - terms_of_payment (string): Payment terms code
   - price_list (string): Price list code
   - comments (string): Internal comments
+  - response_format ('markdown' | 'json'): Output format
 
 Returns:
   The created customer with assigned customer number.`,
@@ -411,7 +412,7 @@ Returns:
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
-        idempotentHint: false,
+        idempotentHint: true,
         openWorldHint: true
       }
     },

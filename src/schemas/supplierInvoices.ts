@@ -23,39 +23,40 @@ export const ListSupplierInvoicesSchema = z.object({
     "unpaid",
     "unpaidoverdue",
     "unbooked",
-    "pendingpayment"
+    "pendingpayment",
+    "authorizepending"
   ])
     .optional()
-    .describe("Filter supplier invoices by status"),
+    .describe("Filter supplier invoices by status (the only server-side filter this endpoint supports)"),
   supplier_number: z.string()
     .max(50)
     .optional()
-    .describe("Filter by supplier number"),
+    .describe("Filter by supplier number (client-side filter, applied after fetching)"),
   from_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("Filter invoices from this date (YYYY-MM-DD)"),
+    .describe("Filter by invoice date from this date (YYYY-MM-DD, client-side filter, applied after fetching)"),
   to_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("Filter invoices to this date (YYYY-MM-DD)"),
+    .describe("Filter by invoice date to this date (YYYY-MM-DD, client-side filter, applied after fetching)"),
   period: DatePeriodEnum
     .optional()
     .describe("Convenience date period filter (e.g., 'last_month', 'this_quarter'). Overrides from_date/to_date if provided."),
   from_final_pay_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("Filter by due date from (YYYY-MM-DD)"),
+    .describe("Filter by final pay date from (YYYY-MM-DD, client-side filter, applied after fetching)"),
   to_final_pay_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("Filter by due date to (YYYY-MM-DD)"),
+    .describe("Filter by final pay date to (YYYY-MM-DD, client-side filter, applied after fetching)"),
   sortby: z.enum(["suppliername", "suppliernumber", "invoicenumber", "invoicedate", "total"])
     .optional()
-    .describe("Field to sort results by"),
+    .describe("Field to sort results by (client-side sort, applied after fetching)"),
   sortorder: z.enum(["ascending", "descending"])
-    .default("ascending")
-    .describe("Sort order for results"),
+    .optional()
+    .describe("Sort order for results, used with sortby (default: ascending)"),
   fetch_all: z.boolean()
     .default(false)
     .describe("Fetch all results by auto-paginating through all pages. WARNING: May take time for large datasets (max 10,000 results)."),
@@ -109,11 +110,11 @@ export const PayablesReportSchema = z.object({
   min_amount: z.number()
     .min(0)
     .optional()
-    .describe("Only include invoices with balance >= this amount"),
+    .describe("Only include invoices with outstanding balance >= this amount"),
   supplier_number: z.string()
     .max(50)
     .optional()
-    .describe("Filter by specific supplier number"),
+    .describe("Filter by specific supplier number (client-side filter, applied after fetching)"),
   group_by: z.enum(["supplier", "age_bucket", "both"])
     .default("both")
     .describe("How to group unpaid supplier invoices in the report"),

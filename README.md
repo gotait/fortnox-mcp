@@ -108,7 +108,7 @@ That's it! You can now ask Claude to manage your Fortnox invoices, customers, an
 - `fortnox_get_supplier` - Get supplier details
 - `fortnox_create_supplier` - Create new supplier
 - `fortnox_update_supplier` - Update supplier
-- `fortnox_delete_supplier` - Delete supplier
+- `fortnox_deactivate_supplier` - Deactivate supplier (Fortnox does not support deleting suppliers)
 
 ### Supplier Invoice Management
 - `fortnox_list_supplier_invoices` - List supplier invoices with filtering

@@ -171,6 +171,18 @@ export const UpdateSupplierSchema = z.object({
     .max(50)
     .optional()
     .describe("Country name"),
+  country_code: z.string()
+    .length(2)
+    .optional()
+    .describe("Two-letter country code (e.g., 'SE' for Sweden)"),
+  currency: z.string()
+    .length(3)
+    .optional()
+    .describe("Currency code (e.g., 'SEK', 'EUR')"),
+  vat_number: z.string()
+    .max(50)
+    .optional()
+    .describe("VAT registration number"),
   active: z.boolean()
     .optional()
     .describe("Whether the supplier is active"),
@@ -202,12 +214,12 @@ export const UpdateSupplierSchema = z.object({
 export type UpdateSupplierInput = z.infer<typeof UpdateSupplierSchema>;
 
 /**
- * Schema for deleting a supplier
+ * Schema for deactivating a supplier
  */
-export const DeleteSupplierSchema = z.object({
+export const DeactivateSupplierSchema = z.object({
   supplier_number: z.string()
     .min(1)
-    .describe("Supplier number to delete")
+    .describe("Supplier number to deactivate")
 }).strict();
 
-export type DeleteSupplierInput = z.infer<typeof DeleteSupplierSchema>;
+export type DeactivateSupplierInput = z.infer<typeof DeactivateSupplierSchema>;

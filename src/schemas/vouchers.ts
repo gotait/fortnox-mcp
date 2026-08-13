@@ -64,11 +64,11 @@ export const ListVouchersSchema = z.object({
   from_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("Filter vouchers from this date (YYYY-MM-DD)"),
+    .describe("Filter vouchers from this date (YYYY-MM-DD). Applied client-side; the Fortnox API does not support date filtering on vouchers."),
   to_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("Filter vouchers to this date (YYYY-MM-DD)"),
+    .describe("Filter vouchers to this date (YYYY-MM-DD). Applied client-side; the Fortnox API does not support date filtering on vouchers."),
   response_format: z.nativeEnum(ResponseFormat)
     .default(ResponseFormat.MARKDOWN)
     .describe("Output format: 'markdown' or 'json'")
@@ -173,11 +173,11 @@ export const AccountActivitySchema = z.object({
   from_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("Filter vouchers from this date (YYYY-MM-DD)"),
+    .describe("Filter vouchers from this date (YYYY-MM-DD). Applied client-side; the Fortnox API does not support date filtering on vouchers."),
   to_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("Filter vouchers to this date (YYYY-MM-DD)"),
+    .describe("Filter vouchers to this date (YYYY-MM-DD). Applied client-side; the Fortnox API does not support date filtering on vouchers."),
   voucher_series: z.string()
     .max(2)
     .optional()
@@ -219,11 +219,11 @@ export const SearchVouchersSchema = z.object({
   from_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("Filter vouchers from this date (YYYY-MM-DD)"),
+    .describe("Filter vouchers from this date (YYYY-MM-DD). Applied client-side; the Fortnox API does not support date filtering on vouchers."),
   to_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("Filter vouchers to this date (YYYY-MM-DD)"),
+    .describe("Filter vouchers to this date (YYYY-MM-DD). Applied client-side; the Fortnox API does not support date filtering on vouchers."),
   voucher_series: z.string()
     .max(2)
     .optional()
@@ -233,7 +233,7 @@ export const SearchVouchersSchema = z.object({
     .describe("Whether search should be case-sensitive"),
   include_rows: z.boolean()
     .default(false)
-    .describe("Include full voucher row details in results"),
+    .describe("Also search row descriptions and include full voucher row details in results. Broadens the search: vouchers whose row descriptions match are included even if the voucher description does not."),
   max_vouchers: z.number()
     .int()
     .min(10)
