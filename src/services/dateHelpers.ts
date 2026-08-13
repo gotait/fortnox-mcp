@@ -26,9 +26,20 @@ export type AgeBucket = "1-30 days" | "31-60 days" | "61-90 days" | "90+ days" |
 
 /**
  * Format a date as YYYY-MM-DD string
+ *
+ * Dates must be constructed in UTC (e.g. via Date.UTC) so that
+ * toISOString() does not shift them across a day boundary.
  */
 function formatDateString(date: Date): string {
   return date.toISOString().split("T")[0];
+}
+
+/**
+ * Get today's date at UTC midnight
+ */
+function getUtcToday(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
 /**
@@ -36,10 +47,10 @@ function formatDateString(date: Date): string {
  */
 function getStartOfWeek(date: Date): Date {
   const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Monday start
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
+  const day = d.getUTCDay();
+  const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1); // Adjust for Monday start
+  d.setUTCDate(diff);
+  d.setUTCHours(0, 0, 0, 0);
   return d;
 }
 
@@ -49,7 +60,7 @@ function getStartOfWeek(date: Date): Date {
 function getEndOfWeek(date: Date): Date {
   const start = getStartOfWeek(date);
   const end = new Date(start);
-  end.setDate(end.getDate() + 6);
+  end.setUTCDate(end.getUTCDate() + 6);
   return end;
 }
 
@@ -70,8 +81,7 @@ function getQuarter(month: number): number {
  * periodToDateRange("last_month") // { from_date: "2025-05-01", to_date: "2025-05-31" }
  */
 export function periodToDateRange(period: DatePeriod): DateRange {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = getUtcToday();
 
   switch (period) {
     case "today": {
@@ -81,7 +91,7 @@ export function periodToDateRange(period: DatePeriod): DateRange {
 
     case "yesterday": {
       const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
       const dateStr = formatDateString(yesterday);
       return { from_date: dateStr, to_date: dateStr };
     }
@@ -97,7 +107,7 @@ export function periodToDateRange(period: DatePeriod): DateRange {
 
     case "last_week": {
       const lastWeekDate = new Date(today);
-      lastWeekDate.setDate(lastWeekDate.getDate() - 7);
+      lastWeekDate.setUTCDate(lastWeekDate.getUTCDate() - 7);
       const start = getStartOfWeek(lastWeekDate);
       const end = getEndOfWeek(lastWeekDate);
       return {
@@ -107,8 +117,8 @@ export function periodToDateRange(period: DatePeriod): DateRange {
     }
 
     case "this_month": {
-      const start = new Date(today.getFullYear(), today.getMonth(), 1);
-      const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+      const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0));
       return {
         from_date: formatDateString(start),
         to_date: formatDateString(end)
@@ -116,8 +126,8 @@ export function periodToDateRange(period: DatePeriod): DateRange {
     }
 
     case "last_month": {
-      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      const end = new Date(today.getFullYear(), today.getMonth(), 0);
+      const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+      const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0));
       return {
         from_date: formatDateString(start),
         to_date: formatDateString(end)
@@ -125,9 +135,9 @@ export function periodToDateRange(period: DatePeriod): DateRange {
     }
 
     case "this_quarter": {
-      const quarter = getQuarter(today.getMonth());
-      const start = new Date(today.getFullYear(), quarter * 3, 1);
-      const end = new Date(today.getFullYear(), quarter * 3 + 3, 0);
+      const quarter = getQuarter(today.getUTCMonth());
+      const start = new Date(Date.UTC(today.getUTCFullYear(), quarter * 3, 1));
+      const end = new Date(Date.UTC(today.getUTCFullYear(), quarter * 3 + 3, 0));
       return {
         from_date: formatDateString(start),
         to_date: formatDateString(end)
@@ -135,15 +145,15 @@ export function periodToDateRange(period: DatePeriod): DateRange {
     }
 
     case "last_quarter": {
-      const currentQuarter = getQuarter(today.getMonth());
-      let year = today.getFullYear();
+      const currentQuarter = getQuarter(today.getUTCMonth());
+      let year = today.getUTCFullYear();
       let quarter = currentQuarter - 1;
       if (quarter < 0) {
         quarter = 3;
         year -= 1;
       }
-      const start = new Date(year, quarter * 3, 1);
-      const end = new Date(year, quarter * 3 + 3, 0);
+      const start = new Date(Date.UTC(year, quarter * 3, 1));
+      const end = new Date(Date.UTC(year, quarter * 3 + 3, 0));
       return {
         from_date: formatDateString(start),
         to_date: formatDateString(end)
@@ -151,8 +161,8 @@ export function periodToDateRange(period: DatePeriod): DateRange {
     }
 
     case "this_year": {
-      const start = new Date(today.getFullYear(), 0, 1);
-      const end = new Date(today.getFullYear(), 11, 31);
+      const start = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
+      const end = new Date(Date.UTC(today.getUTCFullYear(), 11, 31));
       return {
         from_date: formatDateString(start),
         to_date: formatDateString(end)
@@ -160,9 +170,9 @@ export function periodToDateRange(period: DatePeriod): DateRange {
     }
 
     case "last_year": {
-      const year = today.getFullYear() - 1;
-      const start = new Date(year, 0, 1);
-      const end = new Date(year, 11, 31);
+      const year = today.getUTCFullYear() - 1;
+      const start = new Date(Date.UTC(year, 0, 1));
+      const end = new Date(Date.UTC(year, 11, 31));
       return {
         from_date: formatDateString(start),
         to_date: formatDateString(end)
@@ -189,11 +199,11 @@ export function periodToDateRange(period: DatePeriod): DateRange {
 export function getAgeBucket(dueDate: string | undefined): AgeBucket {
   if (!dueDate) return "not_due";
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = getUtcToday();
 
+  // YYYY-MM-DD strings parse as UTC midnight, matching getUtcToday()
   const due = new Date(dueDate);
-  due.setHours(0, 0, 0, 0);
+  due.setUTCHours(0, 0, 0, 0);
 
   // If due date is in the future, not yet due
   if (due >= today) {
@@ -259,7 +269,7 @@ export function getPreviousPeriod(period: DatePeriod): DatePeriod {
  * Get ISO week number for a date
  */
 export function getWeekNumber(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
@@ -270,7 +280,7 @@ export function getWeekNumber(date: Date): number {
  * Get quarter number (1-4) for a date
  */
 export function getQuarterNumber(date: Date): number {
-  return Math.floor(date.getMonth() / 3) + 1;
+  return Math.floor(date.getUTCMonth() / 3) + 1;
 }
 
 /**
@@ -326,7 +336,7 @@ export function getLastNYears(years: number): Array<{
   year: number;
   dateRange: DateRange;
 }> {
-  const currentYear = new Date().getFullYear();
+  const currentYear = new Date().getUTCFullYear();
   const result: Array<{ year: number; dateRange: DateRange }> = [];
 
   for (let i = 0; i < years; i++) {
@@ -369,14 +379,14 @@ export function isDueDateInRange(
  * Get future date from today
  */
 export function getFutureDate(daysAhead: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + daysAhead);
-  return date.toISOString().split("T")[0];
+  const date = getUtcToday();
+  date.setUTCDate(date.getUTCDate() + daysAhead);
+  return formatDateString(date);
 }
 
 /**
  * Get today's date as string
  */
 export function getTodayString(): string {
-  return new Date().toISOString().split("T")[0];
+  return formatDateString(getUtcToday());
 }
