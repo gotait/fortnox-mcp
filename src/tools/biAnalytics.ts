@@ -1236,18 +1236,15 @@ For actual project financials, use fortnox_account_activity with project filteri
         }
 
         // Note: Full project profitability would require fetching vouchers
-        // and filtering by project. This is a simplified version.
+        // and filtering by project. This is a simplified version that only
+        // lists projects - no revenue/cost figures are available here, so
+        // none are emitted (a fabricated 0 could be relayed as fact).
         const projectStats = projects.map(p => ({
           project_number: p.ProjectNumber,
           description: p.Description || p.ProjectNumber,
           status: p.Status || "UNKNOWN",
           start_date: p.StartDate || null,
-          end_date: p.EndDate || null,
-          // Placeholder values - real implementation would sum voucher rows
-          revenue: 0,
-          costs: 0,
-          margin: 0,
-          margin_percent: 0
+          end_date: p.EndDate || null
         }));
 
         const output = {
@@ -1334,13 +1331,13 @@ For actual cost center data, use fortnox_account_activity with cost center filte
         }
 
         // Note: Full cost center analysis would require fetching vouchers
-        // and summing by cost center dimension
+        // and summing by cost center dimension. No cost figures are
+        // available here, so none are emitted (a fabricated 0 could be
+        // relayed as fact).
         const costCenterStats = costCenters.map(cc => ({
           code: cc.Code,
           description: cc.Description || cc.Code,
-          active: cc.Active !== false,
-          // Placeholder - real implementation would sum voucher rows
-          total_costs: 0
+          active: cc.Active !== false
         }));
 
         const output = {
