@@ -76,7 +76,7 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
   // also the only one of the two that holds across instances.
   app.use(
     ["/authorize", "/token", "/register", "/revoke", "/oauth/fortnox/callback"],
-    rateLimit({ name: "oauth", windowMs: 60_000, max: 20, store: stateStore })
+    rateLimit({ name: "oauth", windowMs: 60_000, max: 20 })
   );
 
   app.use(
@@ -146,7 +146,7 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
     // itself without calling next(), so anything mounted behind it never sees
     // failed-auth requests — which is exactly the traffic worth limiting, and
     // it costs a JWT verify plus a revocation lookup each time.
-    rateLimit({ name: "mcp-ip", windowMs: 60_000, max: 240, store: stateStore }),
+    rateLimit({ name: "mcp-ip", windowMs: 60_000, max: 240 }),
     requireBearerAuth({
       verifier: oauthProvider,
       resourceMetadataUrl: `${serverUrl}/.well-known/oauth-protected-resource`,
@@ -156,8 +156,7 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
       name: "mcp-user",
       windowMs: 60_000,
       max: 120,
-      store: stateStore,
-      key: (req) => (req.auth && getUserIdFromAuth(req.auth)) || req.ip || "unknown",
+      identity: (req) => (req.auth ? getUserIdFromAuth(req.auth) : undefined),
     }),
     async (req: Request, res: Response) => {
       try {
