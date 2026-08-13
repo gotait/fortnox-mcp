@@ -10,6 +10,7 @@ import {
   initializeTokenProvider,
 } from "../auth/index.js";
 import { runWithContext } from "../auth/context.js";
+import { isReadOnlyMode, applyReadOnlyMode } from "./readOnly.js";
 import { registerCustomerTools } from "../tools/customers.js";
 import { registerInvoiceTools } from "../tools/invoices.js";
 import { registerSupplierTools } from "../tools/suppliers.js";
@@ -103,6 +104,10 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
     name: "fortnox-mcp-server",
     version: "1.0.0",
   });
+
+  if (isReadOnlyMode()) {
+    applyReadOnlyMode(mcpServer);
+  }
 
   registerCustomerTools(mcpServer);
   registerInvoiceTools(mcpServer);
