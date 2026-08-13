@@ -357,12 +357,15 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
 
 // RFC 8252 lets native clients use any loopback address, not just 127.0.0.1
 // (the OS may hand out 127.0.0.2 and up). URL normalizes every IPv6 loopback
-// spelling to "[::1]" and lowercases hostnames.
+// spelling to "[::1]" and lowercases hostnames, but it preserves the trailing
+// dot of a fully qualified "localhost." — strip it before comparing, otherwise
+// a legitimate loopback redirect URI is rejected as non-loopback.
 function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
   return (
-    hostname === "localhost" ||
-    hostname === "[::1]" ||
-    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)
+    host === "localhost" ||
+    host === "[::1]" ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)
   );
 }
 

@@ -119,13 +119,33 @@ async function runLocalHTTP(): Promise<void> {
   // loopback when explicitly requested via HOST.
   const host = process.env.HOST || "127.0.0.1";
   app.listen(port, host, () => {
-    console.error(`[FortnoxMCP] http://${host}:${port}/mcp`);
-    if (host !== "127.0.0.1" && host !== "localhost") {
+    console.error(`[FortnoxMCP] http://${formatHostForUrl(host)}:${port}/mcp`);
+    if (!isLoopbackBindAddress(host)) {
       console.error(
         `[FortnoxMCP] WARNING: /mcp has no authentication and is reachable by anyone who can connect to ${host}:${port}`
       );
     }
   });
+}
+
+// Any address in 127.0.0.0/8 and the IPv6 loopback are unreachable from other
+// machines, so binding to them is as safe as the 127.0.0.1 default. Matching
+// only the two literal strings warned about "HOST=::1" as if it were exposed.
+function isLoopbackBindAddress(host: string): boolean {
+  return (
+    host === "localhost" ||
+    host === "::1" ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)
+  );
+}
+
+// "0.0.0.0" and "::" are bind addresses, not connectable ones, and a bare IPv6
+// address needs brackets in a URL — neither is something the user can paste.
+function formatHostForUrl(host: string): string {
+  if (host === "0.0.0.0" || host === "::") {
+    return "localhost";
+  }
+  return host.includes(":") ? `[${host}]` : host;
 }
 
 async function main(): Promise<void> {

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
@@ -52,6 +52,22 @@ export function persistTokens(
   } catch (error) {
     console.error(
       `[FortnoxAuth] Warning: Could not persist refresh token to ${TOKEN_FILE}: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+// Called when Fortnox has definitively rejected the stored refresh token.
+// The persisted file takes precedence over FORTNOX_REFRESH_TOKEN on startup,
+// so a dead token left on disk would keep shadowing a freshly issued one and
+// the user would stay locked out across restarts until deleting it by hand.
+export function clearPersistedTokens(): void {
+  try {
+    if (existsSync(TOKEN_FILE)) {
+      unlinkSync(TOKEN_FILE);
+    }
+  } catch (error) {
+    console.error(
+      `[FortnoxAuth] Warning: Could not remove rejected tokens at ${TOKEN_FILE}: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 }
