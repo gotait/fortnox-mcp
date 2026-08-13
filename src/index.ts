@@ -33,6 +33,7 @@ import { loadConfig, validateEnvironment, logConfig } from "./config.js";
 import { getFortnoxAuth } from "./services/auth.js";
 import { getStorageFromEnv } from "./auth/storage/index.js";
 import { runRemoteServer } from "./server/remote.js";
+import { isReadOnlyMode, applyReadOnlyMode } from "./server/readOnly.js";
 import { registerCustomerTools } from "./tools/customers.js";
 import { registerInvoiceTools } from "./tools/invoices.js";
 import { registerSupplierTools } from "./tools/suppliers.js";
@@ -49,6 +50,10 @@ function createMcpServer(): McpServer {
     name: "fortnox-mcp-server",
     version: "1.0.0"
   });
+
+  if (isReadOnlyMode()) {
+    applyReadOnlyMode(server);
+  }
 
   registerCustomerTools(server);
   registerInvoiceTools(server);
