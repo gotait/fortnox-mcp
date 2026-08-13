@@ -1,4 +1,10 @@
 export * from "./types.js";
+export {
+  IStateStore,
+  MemoryStateStore,
+  UpstashRedisStateStore,
+  getStateStoreFromEnv
+} from "./stateStore.js";
 export { MemoryTokenStorage, getMemoryStorage } from "./memory.js";
 export {
   UpstashRedisTokenStorage,
