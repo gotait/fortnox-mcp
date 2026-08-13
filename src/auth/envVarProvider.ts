@@ -4,11 +4,21 @@ import { ITokenProvider, TokenInfo, AuthRequiredError } from "./types.js";
 import { getFortnoxCredentials } from "./credentials.js";
 import { readPersistedTokens, persistTokens } from "./fileTokenStore.js";
 
-// Fortnox rejects an expired or revoked refresh token with 400 (invalid_grant).
-// 401 means bad client credentials and 5xx/network errors are transient —
-// neither invalidates the refresh token.
+// Fortnox rejects an expired or revoked refresh token with 400 invalid_grant.
+// Other 400s (invalid_request, invalid_client, unsupported_grant_type) mean the
+// request or our credentials are wrong, and 401/5xx/network errors are
+// transient or configuration problems — none of those invalidate the refresh
+// token, so the error code has to be checked and not just the status.
 function isRefreshTokenRejected(error: unknown): boolean {
-  return error instanceof AxiosError && error.response?.status === 400;
+  if (!(error instanceof AxiosError) || error.response?.status !== 400) {
+    return false;
+  }
+
+  const data = error.response.data;
+  if (typeof data === "string") {
+    return data.includes("invalid_grant");
+  }
+  return (data as { error?: unknown } | undefined)?.error === "invalid_grant";
 }
 
 interface TokenResponse {

@@ -355,16 +355,39 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
   }
 }
 
+// RFC 8252 lets native clients use any loopback address, not just 127.0.0.1
+// (the OS may hand out 127.0.0.2 and up). URL normalizes every IPv6 loopback
+// spelling to "[::1]" and lowercases hostnames.
 function isLoopbackHost(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+  return (
+    hostname === "localhost" ||
+    hostname === "[::1]" ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)
+  );
 }
 
 // Registration is open (no authentication), and the OAuth callback redirects
-// the browser to whatever redirect_uri the client registered. Block cleartext
-// HTTP off loopback so authorization codes can't travel unencrypted, and
-// block script-capable schemes outright. Custom app schemes (cursor://,
-// vscode://, ...) stay allowed for native clients per RFC 8252.
-const FORBIDDEN_REDIRECT_SCHEMES = new Set(["javascript:", "data:", "file:", "vbscript:"]);
+// the browser to whatever redirect_uri the client registered. Only https and
+// loopback http can be reasoned about as safe delivery channels, so everything
+// else has to be a native app's custom scheme (cursor://, vscode://, ... per
+// RFC 8252) — allowlisting the two web schemes keeps script-capable and
+// fetchable schemes (javascript:, data:, blob:, file:, ftp:, ws:, ...) out
+// without having to enumerate them.
+const ALLOWED_CUSTOM_SCHEME = /^[a-z][a-z0-9+.-]*$/;
+const RESERVED_SCHEMES = new Set([
+  "javascript",
+  "data",
+  "blob",
+  "file",
+  "vbscript",
+  "about",
+  "view-source",
+  "ftp",
+  "ws",
+  "wss",
+  "mailto",
+  "tel",
+]);
 
 function validateRedirectUris(redirectUris: string[] | undefined): void {
   if (!redirectUris || redirectUris.length === 0) {
@@ -379,14 +402,22 @@ function validateRedirectUris(redirectUris: string[] | undefined): void {
       throw new InvalidClientMetadataError(`redirect_uri is not a valid URL: ${uri}`);
     }
 
-    if (FORBIDDEN_REDIRECT_SCHEMES.has(parsed.protocol)) {
-      throw new InvalidClientMetadataError(`redirect_uri scheme is not allowed: ${uri}`);
+    if (parsed.protocol === "https:") {
+      continue;
     }
 
-    if (parsed.protocol === "http:" && !isLoopbackHost(parsed.hostname)) {
-      throw new InvalidClientMetadataError(
-        `http redirect_uri is only allowed on loopback: ${uri}`
-      );
+    if (parsed.protocol === "http:") {
+      if (!isLoopbackHost(parsed.hostname)) {
+        throw new InvalidClientMetadataError(
+          `http redirect_uri is only allowed on loopback: ${uri}`
+        );
+      }
+      continue;
+    }
+
+    const scheme = parsed.protocol.slice(0, -1);
+    if (!ALLOWED_CUSTOM_SCHEME.test(scheme) || RESERVED_SCHEMES.has(scheme)) {
+      throw new InvalidClientMetadataError(`redirect_uri scheme is not allowed: ${uri}`);
     }
   }
 }

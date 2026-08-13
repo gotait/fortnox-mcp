@@ -12,7 +12,7 @@
   ],
   "headers": [
     {
-      "source": "/(mcp|token|register)",
+      "source": "/(mcp|token|register|revoke)",
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",
