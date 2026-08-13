@@ -240,29 +240,79 @@ export function getPeriodDescription(period: DatePeriod): string {
 }
 
 /**
- * Get the previous equivalent period for comparison
+ * Get the date range immediately preceding a period's date range
  *
- * @param period - Current period
- * @returns The previous equivalent period
+ * Shifts the period's range back by one calendar unit (day, week, month,
+ * quarter or year), so e.g. the previous range of "last_month" is the
+ * month before it - never the same range again.
+ *
+ * @param period - Period whose preceding date range to compute
+ * @returns Date range of the previous equivalent period
  *
  * @example
- * getPreviousPeriod("this_month") // "last_month"
- * getPreviousPeriod("this_quarter") // "last_quarter"
+ * getPreviousDateRange("last_month") // The month before last month
  */
-export function getPreviousPeriod(period: DatePeriod): DatePeriod {
-  const mapping: Record<DatePeriod, DatePeriod> = {
-    today: "yesterday",
-    yesterday: "yesterday", // Can't go further back simply
-    this_week: "last_week",
-    last_week: "last_week", // Would need custom logic for 2 weeks ago
-    this_month: "last_month",
-    last_month: "last_month", // Would need custom logic
-    this_quarter: "last_quarter",
-    last_quarter: "last_quarter", // Would need custom logic
-    this_year: "last_year",
-    last_year: "last_year" // Would need custom logic
-  };
-  return mapping[period];
+export function getPreviousDateRange(period: DatePeriod): DateRange {
+  const current = periodToDateRange(period);
+  const start = new Date(current.from_date); // YYYY-MM-DD parses as UTC midnight
+  const end = new Date(current.to_date);
+
+  switch (period) {
+    case "today":
+    case "yesterday": {
+      const prev = new Date(start);
+      prev.setUTCDate(prev.getUTCDate() - 1);
+      const dateStr = formatDateString(prev);
+      return { from_date: dateStr, to_date: dateStr };
+    }
+
+    case "this_week":
+    case "last_week": {
+      const prevStart = new Date(start);
+      prevStart.setUTCDate(prevStart.getUTCDate() - 7);
+      const prevEnd = new Date(end);
+      prevEnd.setUTCDate(prevEnd.getUTCDate() - 7);
+      return {
+        from_date: formatDateString(prevStart),
+        to_date: formatDateString(prevEnd)
+      };
+    }
+
+    case "this_month":
+    case "last_month": {
+      const prevStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 1, 1));
+      const prevEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 0));
+      return {
+        from_date: formatDateString(prevStart),
+        to_date: formatDateString(prevEnd)
+      };
+    }
+
+    case "this_quarter":
+    case "last_quarter": {
+      const prevStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 3, 1));
+      const prevEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 0));
+      return {
+        from_date: formatDateString(prevStart),
+        to_date: formatDateString(prevEnd)
+      };
+    }
+
+    case "this_year":
+    case "last_year": {
+      const year = start.getUTCFullYear() - 1;
+      return {
+        from_date: `${year}-01-01`,
+        to_date: `${year}-12-31`
+      };
+    }
+
+    default: {
+      // Exhaustive check
+      const _exhaustive: never = period;
+      throw new Error(`Unknown period: ${_exhaustive}`);
+    }
+  }
 }
 
 /**
@@ -293,7 +343,7 @@ export interface PeriodComparison {
     dateRange: DateRange;
   };
   previousPeriod: {
-    period: DatePeriod;
+    period: DatePeriod | null;
     description: string;
     dateRange: DateRange;
   };
@@ -301,6 +351,10 @@ export interface PeriodComparison {
 
 /**
  * Compare two periods and get their date ranges
+ *
+ * When no explicit compare period is given, the previous period is the
+ * date range immediately preceding the current period (its `period` is
+ * null since e.g. the month before last_month has no period name).
  *
  * @param currentPeriod - The current period to analyze
  * @param comparePeriod - Optional period to compare to (defaults to previous equivalent)
@@ -310,18 +364,30 @@ export function comparePeriods(
   currentPeriod: DatePeriod,
   comparePeriod?: DatePeriod
 ): PeriodComparison {
-  const previousPeriod = comparePeriod || getPreviousPeriod(currentPeriod);
+  const current = {
+    period: currentPeriod,
+    description: getPeriodDescription(currentPeriod),
+    dateRange: periodToDateRange(currentPeriod)
+  };
 
+  if (comparePeriod) {
+    return {
+      currentPeriod: current,
+      previousPeriod: {
+        period: comparePeriod,
+        description: getPeriodDescription(comparePeriod),
+        dateRange: periodToDateRange(comparePeriod)
+      }
+    };
+  }
+
+  const previousRange = getPreviousDateRange(currentPeriod);
   return {
-    currentPeriod: {
-      period: currentPeriod,
-      description: getPeriodDescription(currentPeriod),
-      dateRange: periodToDateRange(currentPeriod)
-    },
+    currentPeriod: current,
     previousPeriod: {
-      period: previousPeriod,
-      description: getPeriodDescription(previousPeriod),
-      dateRange: periodToDateRange(previousPeriod)
+      period: null,
+      description: `Previous period (${previousRange.from_date} to ${previousRange.to_date})`,
+      dateRange: previousRange
     }
   };
 }
