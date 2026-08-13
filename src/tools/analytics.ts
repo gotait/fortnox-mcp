@@ -73,7 +73,7 @@ function calculateStats(invoices: FortnoxInvoiceListItem[]): {
   const totals = invoices.map(inv => inv.Total || 0);
   const sum = totals.reduce((a, b) => a + b, 0);
   const balanceSum = invoices.reduce((a, inv) => a + (inv.Balance || 0), 0);
-  const paidCount = invoices.filter(inv => (inv.Balance || 0) === 0 && !inv.Cancelled).length;
+  const paidCount = invoices.filter(inv => inv.Booked && (inv.Balance || 0) === 0 && !inv.Cancelled).length;
   const unpaidCount = invoices.filter(inv => (inv.Balance || 0) > 0).length;
 
   return {
@@ -101,8 +101,8 @@ function getMonthKey(dateStr: string | undefined): string {
  */
 function getInvoiceStatus(inv: FortnoxInvoiceListItem): string {
   if (inv.Cancelled) return "cancelled";
-  if ((inv.Balance || 0) === 0) return "paid";
   if (!inv.Booked) return "draft";
+  if ((inv.Balance || 0) === 0) return "paid";
   return "unpaid";
 }
 

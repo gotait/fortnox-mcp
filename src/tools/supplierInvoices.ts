@@ -92,8 +92,8 @@ interface SupplierInvoiceResponse {
  */
 function getSupplierInvoiceStatus(inv: FortnoxSupplierInvoiceListItem): string {
   if (inv.Cancelled) return "cancelled";
-  if ((inv.Balance || 0) === 0) return "paid";
   if (!inv.Booked) return "draft";
+  if ((inv.Balance || 0) === 0) return "paid";
   return "unpaid";
 }
 

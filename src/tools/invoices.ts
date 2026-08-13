@@ -261,8 +261,8 @@ Error Handling:
 
             for (const inv of invoices) {
               const status = inv.Cancelled ? "CANCELLED" :
-                (inv.Balance === 0 ? "PAID" :
-                  (inv.Booked ? "BOOKED" : "DRAFT"));
+                (!inv.Booked ? "DRAFT" :
+                  (inv.Balance === 0 ? "PAID" : "BOOKED"));
               lines.push(`## Invoice #${inv.DocumentNumber}`);
               lines.push(`- **Customer**: ${inv.CustomerName || inv.CustomerNumber}`);
               lines.push(`- **Date**: ${formatDisplayDate(inv.InvoiceDate)} | **Due**: ${formatDisplayDate(inv.DueDate)}`);
@@ -281,8 +281,8 @@ Error Handling:
               params.limit,
               (inv) => {
                 const status = inv.Cancelled ? "CANCELLED" :
-                  (inv.Balance === 0 ? "PAID" :
-                    (inv.Booked ? "BOOKED" : "DRAFT"));
+                  (!inv.Booked ? "DRAFT" :
+                    (inv.Balance === 0 ? "PAID" : "BOOKED"));
                 return `## Invoice #${inv.DocumentNumber}\n` +
                   `- **Customer**: ${inv.CustomerName || inv.CustomerNumber}\n` +
                   `- **Date**: ${formatDisplayDate(inv.InvoiceDate)} | **Due**: ${formatDisplayDate(inv.DueDate)}\n` +
@@ -363,8 +363,8 @@ Returns:
           textContent = JSON.stringify(output, null, 2);
         } else {
           const status = invoice.Cancelled ? "CANCELLED" :
-            (invoice.Balance === 0 ? "PAID" :
-              (invoice.Booked ? "BOOKED" : "DRAFT"));
+            (!invoice.Booked ? "DRAFT" :
+              (invoice.Balance === 0 ? "PAID" : "BOOKED"));
 
           const lines = [
             `# Invoice #${invoice.DocumentNumber}`,
