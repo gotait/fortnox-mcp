@@ -12,6 +12,7 @@ import {
   OAuthTokenRevocationRequest,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+import { InvalidClientMetadataError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { ITokenStorage } from "./storage/types.js";
 import { DatabaseTokenProvider } from "./databaseProvider.js";
 import { FORTNOX_SCOPES } from "./credentials.js";
@@ -354,6 +355,42 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
   }
 }
 
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
+// Registration is open (no authentication), and the OAuth callback redirects
+// the browser to whatever redirect_uri the client registered. Block cleartext
+// HTTP off loopback so authorization codes can't travel unencrypted, and
+// block script-capable schemes outright. Custom app schemes (cursor://,
+// vscode://, ...) stay allowed for native clients per RFC 8252.
+const FORBIDDEN_REDIRECT_SCHEMES = new Set(["javascript:", "data:", "file:", "vbscript:"]);
+
+function validateRedirectUris(redirectUris: string[] | undefined): void {
+  if (!redirectUris || redirectUris.length === 0) {
+    throw new InvalidClientMetadataError("At least one redirect_uri is required");
+  }
+
+  for (const uri of redirectUris) {
+    let parsed: URL;
+    try {
+      parsed = new URL(uri);
+    } catch {
+      throw new InvalidClientMetadataError(`redirect_uri is not a valid URL: ${uri}`);
+    }
+
+    if (FORBIDDEN_REDIRECT_SCHEMES.has(parsed.protocol)) {
+      throw new InvalidClientMetadataError(`redirect_uri scheme is not allowed: ${uri}`);
+    }
+
+    if (parsed.protocol === "http:" && !isLoopbackHost(parsed.hostname)) {
+      throw new InvalidClientMetadataError(
+        `http redirect_uri is only allowed on loopback: ${uri}`
+      );
+    }
+  }
+}
+
 // Dynamic client registration store
 class InMemoryClientsStore implements OAuthRegisteredClientsStore {
   private clients: Map<string, OAuthClientInformationFull> = new Map();
@@ -365,6 +402,8 @@ class InMemoryClientsStore implements OAuthRegisteredClientsStore {
   registerClient(
     client: Omit<OAuthClientInformationFull, "client_id" | "client_id_issued_at">
   ): OAuthClientInformationFull {
+    validateRedirectUris(client.redirect_uris);
+
     const clientId = `client_${crypto.randomUUID()}`;
     const fullClient: OAuthClientInformationFull = {
       ...client,
