@@ -4,6 +4,13 @@ import { ITokenProvider, TokenInfo, AuthRequiredError } from "./types.js";
 import { ITokenStorage } from "./storage/types.js";
 import { getFortnoxCredentials } from "./credentials.js";
 
+// Fortnox rejects an expired or revoked refresh token with 400 (invalid_grant).
+// 401 means bad client credentials and 5xx/network errors are transient —
+// neither invalidates the user's refresh token.
+function isRefreshTokenRejected(error: unknown): boolean {
+  return error instanceof AxiosError && error.response?.status === 400;
+}
+
 // Token provider for remote mode (multi-user with database storage)
 export class DatabaseTokenProvider implements ITokenProvider {
   private clientId: string;
@@ -150,8 +157,9 @@ export class DatabaseTokenProvider implements ITokenProvider {
       await this.storeTokens(userId, newTokens);
       return newTokens.accessToken;
     } catch (error) {
-      // Clear invalid tokens
-      await this.storage.delete(userId);
+      if (isRefreshTokenRejected(error)) {
+        await this.storage.delete(userId);
+      }
       throw this.handleAuthError(error, "Failed to refresh access token");
     }
   }
