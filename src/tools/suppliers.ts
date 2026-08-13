@@ -6,7 +6,8 @@ import {
   buildErrorResponse,
   formatListMarkdown,
   formatDetailMarkdown,
-  buildPaginationMeta
+  buildPaginationMeta,
+  sanitizeInline
 } from "../services/formatters.js";
 import {
   ListSuppliersSchema,
@@ -131,10 +132,10 @@ Returns:
             total,
             params.page,
             params.limit,
-            (s) => `## ${s.Name} (${s.SupplierNumber})\n` +
-              (s.Email ? `- **Email**: ${s.Email}\n` : "") +
-              (s.City ? `- **City**: ${s.City}\n` : "") +
-              (s.OrganisationNumber ? `- **Org.nr**: ${s.OrganisationNumber}` : "")
+            (s) => `## ${sanitizeInline(s.Name)} (${s.SupplierNumber})\n` +
+              (s.Email ? `- **Email**: ${sanitizeInline(s.Email)}\n` : "") +
+              (s.City ? `- **City**: ${sanitizeInline(s.City)}\n` : "") +
+              (s.OrganisationNumber ? `- **Org.nr**: ${sanitizeInline(s.OrganisationNumber)}` : "")
           );
         }
 
@@ -198,23 +199,23 @@ Returns:
         if (params.response_format === ResponseFormat.JSON) {
           textContent = JSON.stringify(output, null, 2);
         } else {
-          textContent = formatDetailMarkdown(`Supplier: ${supplier.Name}`, [
+          textContent = formatDetailMarkdown(`Supplier: ${sanitizeInline(supplier.Name)}`, [
             { label: "Supplier Number", value: supplier.SupplierNumber },
-            { label: "Name", value: supplier.Name },
-            { label: "Email", value: supplier.Email },
-            { label: "Phone", value: supplier.Phone1 },
-            { label: "Address", value: [supplier.Address1, supplier.Address2].filter(Boolean).join(", ") },
-            { label: "ZIP/City", value: [supplier.ZipCode, supplier.City].filter(Boolean).join(" ") },
-            { label: "Country", value: supplier.Country },
-            { label: "Organisation Number", value: supplier.OrganisationNumber },
-            { label: "VAT Number", value: supplier.VATNumber },
-            { label: "Currency", value: supplier.Currency },
+            { label: "Name", value: sanitizeInline(supplier.Name) },
+            { label: "Email", value: sanitizeInline(supplier.Email) },
+            { label: "Phone", value: sanitizeInline(supplier.Phone1) },
+            { label: "Address", value: sanitizeInline([supplier.Address1, supplier.Address2].filter(Boolean).join(", ")) },
+            { label: "ZIP/City", value: sanitizeInline([supplier.ZipCode, supplier.City].filter(Boolean).join(" ")) },
+            { label: "Country", value: sanitizeInline(supplier.Country) },
+            { label: "Organisation Number", value: sanitizeInline(supplier.OrganisationNumber) },
+            { label: "VAT Number", value: sanitizeInline(supplier.VATNumber) },
+            { label: "Currency", value: sanitizeInline(supplier.Currency) },
             { label: "Active", value: supplier.Active },
-            { label: "Bank Account", value: supplier.BankAccount },
-            { label: "Bankgiro", value: supplier.BG },
-            { label: "Plusgiro", value: supplier.PG },
-            { label: "Payment Terms", value: supplier.TermsOfPayment },
-            { label: "Comments", value: supplier.Comments }
+            { label: "Bank Account", value: sanitizeInline(supplier.BankAccount) },
+            { label: "Bankgiro", value: sanitizeInline(supplier.BG) },
+            { label: "Plusgiro", value: sanitizeInline(supplier.PG) },
+            { label: "Payment Terms", value: sanitizeInline(supplier.TermsOfPayment) },
+            { label: "Comments", value: sanitizeInline(supplier.Comments) }
           ]);
         }
 

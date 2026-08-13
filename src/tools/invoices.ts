@@ -9,7 +9,9 @@ import {
   formatBoolean,
   formatListMarkdown,
   formatDetailMarkdown,
-  buildPaginationMeta
+  buildPaginationMeta,
+  sanitizeInline,
+  fenceUntrusted
 } from "../services/formatters.js";
 import { periodToDateRange, getPeriodDescription } from "../services/dateHelpers.js";
 import {
@@ -264,7 +266,7 @@ Error Handling:
                 (inv.Balance === 0 ? "PAID" :
                   (inv.Booked ? "BOOKED" : "DRAFT"));
               lines.push(`## Invoice #${inv.DocumentNumber}`);
-              lines.push(`- **Customer**: ${inv.CustomerName || inv.CustomerNumber}`);
+              lines.push(`- **Customer**: ${sanitizeInline(inv.CustomerName || inv.CustomerNumber)}`);
               lines.push(`- **Date**: ${formatDisplayDate(inv.InvoiceDate)} | **Due**: ${formatDisplayDate(inv.DueDate)}`);
               lines.push(`- **Total**: ${formatMoney(inv.Total, inv.Currency)} | **Balance**: ${formatMoney(inv.Balance, inv.Currency)}`);
               lines.push(`- **Status**: ${status}`);
@@ -284,7 +286,7 @@ Error Handling:
                   (inv.Balance === 0 ? "PAID" :
                     (inv.Booked ? "BOOKED" : "DRAFT"));
                 return `## Invoice #${inv.DocumentNumber}\n` +
-                  `- **Customer**: ${inv.CustomerName || inv.CustomerNumber}\n` +
+                  `- **Customer**: ${sanitizeInline(inv.CustomerName || inv.CustomerNumber)}\n` +
                   `- **Date**: ${formatDisplayDate(inv.InvoiceDate)} | **Due**: ${formatDisplayDate(inv.DueDate)}\n` +
                   `- **Total**: ${formatMoney(inv.Total, inv.Currency)} | **Balance**: ${formatMoney(inv.Balance, inv.Currency)}\n` +
                   `- **Status**: ${status}`;
@@ -373,7 +375,7 @@ Returns:
             "",
             "## Customer",
             `- **Number**: ${invoice.CustomerNumber}`,
-            `- **Name**: ${invoice.CustomerName || "-"}`,
+            `- **Name**: ${sanitizeInline(invoice.CustomerName || "-")}`,
             "",
             "## Dates & Payment",
             `- **Invoice Date**: ${formatDisplayDate(invoice.InvoiceDate)}`,
@@ -392,16 +394,16 @@ Returns:
             lines.push("|-------------|-----|-------|-------|");
             for (const row of invoice.InvoiceRows) {
               lines.push(
-                `| ${row.Description || row.ArticleNumber || "-"} | ${row.DeliveredQuantity || 1} | ${formatMoney(row.Price)} | ${formatMoney(row.Total)} |`
+                `| ${sanitizeInline(row.Description || row.ArticleNumber || "-")} | ${row.DeliveredQuantity || 1} | ${formatMoney(row.Price)} | ${formatMoney(row.Total)} |`
               );
             }
           }
 
           if (invoice.Remarks) {
-            lines.push("", "## Remarks", invoice.Remarks);
+            lines.push("", fenceUntrusted("Remarks", invoice.Remarks));
           }
           if (invoice.Comments) {
-            lines.push("", "## Comments", invoice.Comments);
+            lines.push("", fenceUntrusted("Comments", invoice.Comments));
           }
 
           textContent = lines.join("\n");
@@ -504,7 +506,7 @@ Example rows:
         } else {
           textContent = `# Invoice Created\n\n` +
             `**Document Number**: ${invoice.DocumentNumber}\n` +
-            `**Customer**: ${invoice.CustomerName || invoice.CustomerNumber}\n` +
+            `**Customer**: ${sanitizeInline(invoice.CustomerName || invoice.CustomerNumber)}\n` +
             `**Total**: ${formatMoney(invoice.Total, invoice.Currency)}\n\n` +
             `Invoice has been created as a draft. Use \`fortnox_bookkeep_invoice\` to bookkeep it.`;
         }
