@@ -72,6 +72,8 @@ interface FortnoxSupplierInvoiceListItem {
   Balance?: number;
   Currency?: string;
   Booked?: boolean;
+  /** The list endpoint spells this "Cancel"; only the detail object uses "Cancelled". */
+  Cancel?: boolean;
   Cancelled?: boolean;
   "@url"?: string;
 }
@@ -90,10 +92,20 @@ interface SupplierInvoiceResponse {
 }
 
 /**
+ * Whether a supplier invoice has been cancelled
+ *
+ * Accepts either spelling so list items ("Cancel") and detail objects
+ * ("Cancelled") are both recognised.
+ */
+function isSupplierInvoiceCancelled(inv: FortnoxSupplierInvoiceListItem): boolean {
+  return inv.Cancel === true || inv.Cancelled === true;
+}
+
+/**
  * Get supplier invoice status
  */
 function getSupplierInvoiceStatus(inv: FortnoxSupplierInvoiceListItem): string {
-  if (inv.Cancelled) return "cancelled";
+  if (isSupplierInvoiceCancelled(inv)) return "cancelled";
   if (!inv.Booked) return "draft";
   if ((inv.Balance || 0) === 0) return "paid";
   return "unpaid";
@@ -171,6 +183,7 @@ Examples:
 
         let invoices: FortnoxSupplierInvoiceListItem[];
         let total: number;
+        let totalIsExact = true;
         let pagesFetched = 1;
         let truncated = false;
         let truncationReason: string | undefined;
@@ -185,6 +198,7 @@ Examples:
           );
           invoices = result.items;
           total = result.total;
+          totalIsExact = result.totalIsExact;
           pagesFetched = result.pagesFetched;
           truncated = result.truncated;
           truncationReason = result.truncationReason;
@@ -210,6 +224,7 @@ Examples:
         const paginationMeta = params.fetch_all
           ? {
               total,
+              total_is_exact: totalIsExact,
               count: invoices.length,
               fetched_all: true,
               pages_fetched: pagesFetched,
@@ -235,7 +250,7 @@ Examples:
             balance: inv.Balance || 0,
             currency: inv.Currency || "SEK",
             booked: inv.Booked ?? false,
-            cancelled: inv.Cancelled ?? false,
+            cancelled: isSupplierInvoiceCancelled(inv),
             status: getSupplierInvoiceStatus(inv)
           }))
         };
@@ -252,7 +267,7 @@ Examples:
             const lines: string[] = [
               `# ${title}`,
               "",
-              `Showing ${invoices.length} of ${total} total supplier invoices`,
+              `Showing ${invoices.length} of ${totalIsExact ? total : `at least ${total}`} total supplier invoices`,
               `(${pagesFetched} pages fetched)`
             ];
 
@@ -528,7 +543,9 @@ Examples:
           (r) => r.MetaInformation?.["@TotalResources"] || 0
         );
 
-        let invoices = result.items;
+        // Cancelled invoices can still come back under filter=unpaid, and they
+        // will never be paid - mirrors the receivables side in analytics.ts.
+        let invoices = result.items.filter(inv => !isSupplierInvoiceCancelled(inv));
 
         // Apply min_amount filter
         if (params.min_amount !== undefined) {

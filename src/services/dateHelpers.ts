@@ -35,11 +35,17 @@ function formatDateString(date: Date): string {
 }
 
 /**
- * Get today's date at UTC midnight
+ * Get the host's current calendar date, represented at UTC midnight
+ *
+ * "Today" means the local calendar date - a server in Stockholm at 00:30 CEST
+ * on 1 July is in July, and one in New York at 20:00 on 30 June is not yet in
+ * July. Reading the components locally and storing them at UTC midnight makes
+ * both true: formatDateString() emits the local date, and the UTC-based
+ * arithmetic in this module cannot shift it across a day boundary.
  */
-function getUtcToday(): Date {
+function getToday(): Date {
   const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
 }
 
 /**
@@ -81,7 +87,7 @@ function getQuarter(month: number): number {
  * periodToDateRange("last_month") // { from_date: "2025-05-01", to_date: "2025-05-31" }
  */
 export function periodToDateRange(period: DatePeriod): DateRange {
-  const today = getUtcToday();
+  const today = getToday();
 
   switch (period) {
     case "today": {
@@ -199,9 +205,9 @@ export function periodToDateRange(period: DatePeriod): DateRange {
 export function getAgeBucket(dueDate: string | undefined): AgeBucket {
   if (!dueDate) return "not_due";
 
-  const today = getUtcToday();
+  const today = getToday();
 
-  // YYYY-MM-DD strings parse as UTC midnight, matching getUtcToday()
+  // YYYY-MM-DD strings parse as UTC midnight, matching getToday()
   const due = new Date(dueDate);
   due.setUTCHours(0, 0, 0, 0);
 
@@ -386,7 +392,9 @@ export function comparePeriods(
     currentPeriod: current,
     previousPeriod: {
       period: null,
-      description: `Previous period (${previousRange.from_date} to ${previousRange.to_date})`,
+      // Kept short: callers pair the description with dateRange themselves,
+      // so embedding the range here would print it twice.
+      description: "Previous period",
       dateRange: previousRange
     }
   };
@@ -402,7 +410,7 @@ export function getLastNYears(years: number): Array<{
   year: number;
   dateRange: DateRange;
 }> {
-  const currentYear = new Date().getUTCFullYear();
+  const currentYear = getToday().getUTCFullYear();
   const result: Array<{ year: number; dateRange: DateRange }> = [];
 
   for (let i = 0; i < years; i++) {
@@ -445,7 +453,7 @@ export function isDueDateInRange(
  * Get future date from today
  */
 export function getFutureDate(daysAhead: number): string {
-  const date = getUtcToday();
+  const date = getToday();
   date.setUTCDate(date.getUTCDate() + daysAhead);
   return formatDateString(date);
 }
@@ -454,5 +462,5 @@ export function getFutureDate(daysAhead: number): string {
  * Get today's date as string
  */
 export function getTodayString(): string {
-  return formatDateString(getUtcToday());
+  return formatDateString(getToday());
 }

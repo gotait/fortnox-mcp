@@ -90,7 +90,19 @@ interface FortnoxSupplierInvoiceListItem {
   Balance?: number;
   Currency?: string;
   Booked?: boolean;
+  /** The list endpoint spells this "Cancel"; only the detail object uses "Cancelled". */
+  Cancel?: boolean;
   Cancelled?: boolean;
+}
+
+/**
+ * Whether a supplier invoice has been cancelled
+ *
+ * Accepts either spelling so list items ("Cancel") and detail objects
+ * ("Cancelled") are both recognised.
+ */
+function isSupplierInvoiceCancelled(inv: FortnoxSupplierInvoiceListItem): boolean {
+  return inv.Cancel === true || inv.Cancelled === true;
 }
 
 interface SupplierInvoiceListResponse {
@@ -277,8 +289,14 @@ export function registerBIAnalyticsTools(server: McpServer): void {
           return isDueDateInRange(dueDate, today, futureDate);
         };
 
-        const receivables = receivablesResult.items.filter(inv => filterByDueDate(inv.DueDate));
-        const payables = payablesResult.items.filter(inv => filterByDueDate(inv.DueDate));
+        // Cancelled documents can still come back under filter=unpaid, and they
+        // will never be paid - projecting them would inflate both sides.
+        const receivables = receivablesResult.items.filter(
+          inv => !inv.Cancelled && filterByDueDate(inv.DueDate)
+        );
+        const payables = payablesResult.items.filter(
+          inv => !isSupplierInvoiceCancelled(inv) && filterByDueDate(inv.DueDate)
+        );
 
         // Generate time buckets
         const buckets = generateTimeBucketKeys(today, futureDate, params.group_by);
@@ -1142,8 +1160,8 @@ export function registerBIAnalyticsTools(server: McpServer): void {
           const lines: string[] = [
             `# Customer Growth Analysis - ${filterLabel}`,
             "",
-            `**Current**: ${comparison.currentPeriod.description}`,
-            `**Previous**: ${comparison.previousPeriod.description}`,
+            `**Current**: ${comparison.currentPeriod.description} (${comparison.currentPeriod.dateRange.from_date} to ${comparison.currentPeriod.dateRange.to_date})`,
+            `**Previous**: ${comparison.previousPeriod.description} (${comparison.previousPeriod.dateRange.from_date} to ${comparison.previousPeriod.dateRange.to_date})`,
             "",
             "## Summary",
             "",
