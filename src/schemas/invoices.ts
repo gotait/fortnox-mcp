@@ -103,7 +103,7 @@ export const ListInvoicesSchema = z.object({
   period: DatePeriodEnum
     .optional()
     .describe("Convenience date period filter (e.g., 'last_month', 'this_quarter'). Overrides from_date/to_date if provided."),
-  sortby: z.enum(["customername", "customernumber", "documentnumber", "invoicedate", "total"])
+  sortby: z.enum(["customername", "customernumber", "documentnumber", "invoicedate", "ocr", "total"])
     .optional()
     .describe("Field to sort results by"),
   sortorder: z.enum(["ascending", "descending"])
@@ -194,9 +194,6 @@ export const CreateInvoiceSchema = z.object({
     .min(0)
     .optional()
     .describe("Administration fee"),
-  send_type: z.enum(["EMAIL", "PRINT", "EINVOICE"])
-    .optional()
-    .describe("How to send the invoice"),
   response_format: z.nativeEnum(ResponseFormat)
     .default(ResponseFormat.MARKDOWN)
     .describe("Output format: 'markdown' or 'json'")
@@ -231,6 +228,14 @@ export const UpdateInvoiceSchema = z.object({
     .max(50)
     .optional()
     .describe("Customer's reference person"),
+  currency: z.string()
+    .length(3)
+    .optional()
+    .describe("Currency code (e.g., 'SEK')"),
+  terms_of_payment: z.string()
+    .max(50)
+    .optional()
+    .describe("Payment terms code"),
   comments: z.string()
     .max(1024)
     .optional()

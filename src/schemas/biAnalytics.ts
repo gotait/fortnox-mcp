@@ -96,18 +96,15 @@ export const ProductPerformanceSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
     .describe("End date for analysis (YYYY-MM-DD). Ignored if period is specified."),
-  metric: z.enum(["revenue", "quantity", "invoice_count"])
+  metric: z.enum(["revenue", "invoice_count"])
     .default("revenue")
-    .describe("Metric to rank products by: 'revenue', 'quantity', or 'invoice_count'"),
+    .describe("Metric to rank customers by: 'revenue' or 'invoice_count'. Quantity is not available (invoice list items carry no row/article data)."),
   top_n: z.number()
     .int()
     .min(1)
     .max(100)
     .default(20)
-    .describe("Number of top products to return (1-100, default: 20)"),
-  include_trends: z.boolean()
-    .default(false)
-    .describe("Compare to previous period to show trends"),
+    .describe("Number of top customers to return (1-100, default: 20)"),
   response_format: z.nativeEnum(ResponseFormat)
     .default(ResponseFormat.MARKDOWN)
     .describe("Output format: 'markdown' or 'json'")
@@ -124,9 +121,9 @@ export const PeriodComparisonSchema = z.object({
   compare_to: DatePeriodEnum
     .optional()
     .describe("Period to compare against. If not specified, compares to the previous equivalent period."),
-  metrics: z.array(z.enum(["revenue", "invoice_count", "average_invoice", "new_customers"]))
+  metrics: z.array(z.enum(["revenue", "invoice_count", "average_invoice", "unique_customers"]))
     .default(["revenue", "invoice_count", "average_invoice"])
-    .describe("Metrics to compare between periods"),
+    .describe("Metrics to compare between periods. 'unique_customers' counts distinct customers invoiced in each period (not net-new customers)."),
   response_format: z.nativeEnum(ResponseFormat)
     .default(ResponseFormat.MARKDOWN)
     .describe("Output format: 'markdown' or 'json'")
@@ -170,20 +167,6 @@ export const ProjectProfitabilitySchema = z.object({
   project_number: z.string()
     .optional()
     .describe("Filter to a specific project number"),
-  period: DatePeriodEnum
-    .optional()
-    .describe("Date period to analyze"),
-  from_date: z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
-    .optional()
-    .describe("Start date for analysis (YYYY-MM-DD). Ignored if period is specified."),
-  to_date: z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
-    .optional()
-    .describe("End date for analysis (YYYY-MM-DD). Ignored if period is specified."),
-  include_details: z.boolean()
-    .default(false)
-    .describe("Include detailed breakdown of revenue and costs per project"),
   response_format: z.nativeEnum(ResponseFormat)
     .default(ResponseFormat.MARKDOWN)
     .describe("Output format: 'markdown' or 'json'")
@@ -195,28 +178,9 @@ export type ProjectProfitabilityInput = z.infer<typeof ProjectProfitabilitySchem
  * Schema for Cost Center Analysis tool
  */
 export const CostCenterAnalysisSchema = z.object({
-  period: DatePeriodEnum
-    .optional()
-    .describe("Date period to analyze"),
-  from_date: z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
-    .optional()
-    .describe("Start date for analysis (YYYY-MM-DD). Ignored if period is specified."),
-  to_date: z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
-    .optional()
-    .describe("End date for analysis (YYYY-MM-DD). Ignored if period is specified."),
   cost_center: z.string()
     .optional()
     .describe("Filter to a specific cost center code"),
-  account_range_from: z.number()
-    .int()
-    .optional()
-    .describe("Start of account range to include (default: all accounts)"),
-  account_range_to: z.number()
-    .int()
-    .optional()
-    .describe("End of account range to include (default: all accounts)"),
   response_format: z.nativeEnum(ResponseFormat)
     .default(ResponseFormat.MARKDOWN)
     .describe("Output format: 'markdown' or 'json'")
@@ -230,29 +194,26 @@ export type CostCenterAnalysisInput = z.infer<typeof CostCenterAnalysisSchema>;
 export const ExpenseAnalysisSchema = z.object({
   period: DatePeriodEnum
     .optional()
-    .describe("Date period to analyze"),
+    .describe("Date period. Echoed in the output; no expense data is fetched."),
   from_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("Start date for analysis (YYYY-MM-DD). Ignored if period is specified."),
+    .describe("Start date (YYYY-MM-DD). Ignored if period is specified. Echoed in the output; no expense data is fetched."),
   to_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("End date for analysis (YYYY-MM-DD). Ignored if period is specified."),
+    .describe("End date (YYYY-MM-DD). Ignored if period is specified. Echoed in the output; no expense data is fetched."),
   account_range_from: z.number()
     .int()
     .default(4000)
-    .describe("Start of expense account range (default: 4000)"),
+    .describe("Start of expense account range (default: 4000). Only filters which account classes appear in the structure."),
   account_range_to: z.number()
     .int()
     .default(8999)
-    .describe("End of expense account range (default: 8999)"),
+    .describe("End of expense account range (default: 8999). Only filters which account classes appear in the structure."),
   group_by: z.enum(["account", "account_class"])
     .default("account_class")
-    .describe("Group expenses by individual account or account class (e.g., 4xxx, 5xxx)"),
-  compare_to: DatePeriodEnum
-    .optional()
-    .describe("Optional period to compare against"),
+    .describe("Group expenses by individual account or account class (e.g., 4xxx, 5xxx). Echoed in the output; no expense data is fetched."),
   response_format: z.nativeEnum(ResponseFormat)
     .default(ResponseFormat.MARKDOWN)
     .describe("Output format: 'markdown' or 'json'")
@@ -286,24 +247,24 @@ export type YearlyComparisonInput = z.infer<typeof YearlyComparisonSchema>;
 export const GrossMarginTrendSchema = z.object({
   period: DatePeriodEnum
     .optional()
-    .describe("Date period to analyze (e.g., 'this_year', 'last_year')"),
+    .describe("Date period (e.g., 'this_year', 'last_year'). Echoed in the output; no margin data is fetched."),
   from_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("Start date for analysis (YYYY-MM-DD). Ignored if period is specified."),
+    .describe("Start date (YYYY-MM-DD). Ignored if period is specified. Echoed in the output; no margin data is fetched."),
   to_date: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     .optional()
-    .describe("End date for analysis (YYYY-MM-DD). Ignored if period is specified."),
+    .describe("End date (YYYY-MM-DD). Ignored if period is specified. Echoed in the output; no margin data is fetched."),
   group_by: z.enum(["month", "quarter"])
     .default("month")
-    .describe("How to group the margin trend: 'month' or 'quarter'"),
+    .describe("How the margin trend would be grouped. Echoed in the output; not yet applied."),
   revenue_accounts: z.string()
     .optional()
-    .describe("Revenue account range (e.g., '3000-3999'). Default: 3000-3999"),
+    .describe("Revenue account range (e.g., '3000-3999'). Default: 3000-3999. Echoed in the output; not yet applied."),
   cogs_accounts: z.string()
     .optional()
-    .describe("Cost of goods sold account range (e.g., '4000-4999'). Default: 4000-4999"),
+    .describe("Cost of goods sold account range (e.g., '4000-4999'). Default: 4000-4999. Echoed in the output; not yet applied."),
   response_format: z.nativeEnum(ResponseFormat)
     .default(ResponseFormat.MARKDOWN)
     .describe("Output format: 'markdown' or 'json'")

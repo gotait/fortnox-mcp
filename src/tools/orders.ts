@@ -108,7 +108,37 @@ export function registerOrderTools(server: McpServer): void {
     "fortnox_list_orders",
     {
       title: "List Fortnox Orders",
-      description: `List sales orders with filtering by status, customer, date range. Filter: cancelled, expired, invoicecreated, invoicenotcreated.`,
+      description: `List sales orders from Fortnox accounting system.
+
+Retrieves a paginated list of orders with optional filtering by status, customer, or date range.
+Supports convenience period filters and can fetch all results for large datasets.
+
+Args:
+  - limit (number): Max results per page, 1-100 (default: 20)
+  - page (number): Page number for pagination (default: 1)
+  - filter ('cancelled' | 'expired' | 'invoicecreated' | 'invoicenotcreated'): Filter by order status ('invoicecreated' = an invoice was created from the order, 'invoicenotcreated' = no invoice has been created from the order)
+  - customer_number (string): Filter by customer number
+  - from_date (string): Filter orders from this date (YYYY-MM-DD)
+  - to_date (string): Filter orders to this date (YYYY-MM-DD)
+  - period ('today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year'): Convenience date period, overrides from_date/to_date
+  - sortby ('customername' | 'customernumber' | 'documentnumber' | 'orderdate' | 'total'): Field to sort by
+  - sortorder ('ascending' | 'descending'): Sort order (default: ascending)
+  - fetch_all (boolean): Fetch all results by auto-paginating (max 10,000 results)
+  - response_format ('markdown' | 'json'): Output format (default: markdown)
+
+Returns:
+  For JSON: { total, page, limit, count, has_more, total_pages, next_offset?, truncated?, orders: [...] }
+  For Markdown: Formatted list with pagination info
+
+Examples:
+  - Orders not yet invoiced: filter="invoicenotcreated"
+  - Last month's orders: period="last_month"
+  - Top orders by amount: sortby="total", sortorder="descending"
+  - Customer orders this year: customer_number="1001", period="this_year"
+
+Error Handling:
+  - Returns "Error: Rate limit exceeded..." if API limit hit
+  - Returns truncation info if fetch_all hits safety limits`,
       inputSchema: ListOrdersSchema,
       annotations: {
         readOnlyHint: true,
@@ -263,7 +293,37 @@ export function registerOrderTools(server: McpServer): void {
     "fortnox_list_offers",
     {
       title: "List Fortnox Offers",
-      description: `List sales offers/quotes with filtering by status, customer, date range. Filter: cancelled, expired, ordercreated, ordernotcreated.`,
+      description: `List sales offers/quotes from Fortnox accounting system.
+
+Retrieves a paginated list of offers with optional filtering by status, customer, or date range.
+Supports convenience period filters and can fetch all results for large datasets.
+
+Args:
+  - limit (number): Max results per page, 1-100 (default: 20)
+  - page (number): Page number for pagination (default: 1)
+  - filter ('cancelled' | 'expired' | 'completed' | 'notcompleted' | 'ordercreated' | 'ordernotcreated'): Filter by offer status ('ordercreated' = an order was created from the offer, 'ordernotcreated' = no order has been created from the offer)
+  - customer_number (string): Filter by customer number
+  - from_date (string): Filter offers from this date (YYYY-MM-DD)
+  - to_date (string): Filter offers to this date (YYYY-MM-DD)
+  - period ('today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year'): Convenience date period, overrides from_date/to_date
+  - sortby ('customerName' | 'id' | 'transactionDate' | 'total'): Field to sort by (case-sensitive, differs from the orders endpoint)
+  - sortorder ('ascending' | 'descending'): Sort order (default: ascending)
+  - fetch_all (boolean): Fetch all results by auto-paginating (max 10,000 results)
+  - response_format ('markdown' | 'json'): Output format (default: markdown)
+
+Returns:
+  For JSON: { total, page, limit, count, has_more, total_pages, next_offset?, truncated?, offers: [...] }
+  For Markdown: Formatted list with pagination info
+
+Examples:
+  - Offers not yet converted to orders: filter="ordernotcreated"
+  - Last month's offers: period="last_month"
+  - Top offers by amount: sortby="total", sortorder="descending"
+  - Customer offers this year: customer_number="1001", period="this_year"
+
+Error Handling:
+  - Returns "Error: Rate limit exceeded..." if API limit hit
+  - Returns truncation info if fetch_all hits safety limits`,
       inputSchema: ListOffersSchema,
       annotations: {
         readOnlyHint: true,

@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { fortnoxRequest } from "../services/api.js";
+import { fortnoxRequest, fetchAllPages } from "../services/api.js";
 import { ResponseFormat } from "../constants.js";
 import {
   buildToolResponse,
@@ -14,12 +14,12 @@ import {
   GetSupplierSchema,
   CreateSupplierSchema,
   UpdateSupplierSchema,
-  DeleteSupplierSchema,
+  DeactivateSupplierSchema,
   type ListSuppliersInput,
   type GetSupplierInput,
   type CreateSupplierInput,
   type UpdateSupplierInput,
-  type DeleteSupplierInput
+  type DeactivateSupplierInput
 } from "../schemas/suppliers.js";
 
 // API response types
@@ -37,7 +37,7 @@ interface FortnoxSupplier {
   VATNumber?: string;
   Currency?: string;
   Active?: boolean;
-  BankAccount?: string;
+  BankAccountNumber?: string;
   BG?: string;
   PG?: string;
   TermsOfPayment?: string;
@@ -51,6 +51,7 @@ interface FortnoxSupplierListItem {
   Email?: string;
   City?: string;
   OrganisationNumber?: string;
+  Active?: boolean;
   "@url"?: string;
 }
 
@@ -80,11 +81,15 @@ export function registerSupplierTools(server: McpServer): void {
 
 Retrieves a paginated list of suppliers with optional filtering.
 
+Note: The Fortnox API does not support filtering suppliers server-side, so
+filter and search_name are applied client-side. When either is provided, all
+suppliers are fetched (subject to safety limits) and filtered before paginating.
+
 Args:
   - limit (number): Max results per page, 1-100 (default: 20)
   - page (number): Page number for pagination (default: 1)
-  - filter ('active' | 'inactive'): Filter by supplier status
-  - search_name (string): Search suppliers by name (partial match)
+  - filter ('active' | 'inactive'): Filter by supplier status (client-side)
+  - search_name (string): Search suppliers by name, case-insensitive partial match (client-side)
   - response_format ('markdown' | 'json'): Output format
 
 Returns:
@@ -99,20 +104,48 @@ Returns:
     },
     async (params: ListSuppliersInput) => {
       try {
-        const queryParams: Record<string, string | number | boolean | undefined> = {
-          limit: params.limit,
-          page: params.page
-        };
+        let suppliers: FortnoxSupplierListItem[];
+        let total: number;
+        let truncated = false;
+        let truncationReason: string | undefined;
 
-        if (params.filter) queryParams.filter = params.filter;
-        if (params.search_name) queryParams.name = params.search_name;
+        if (params.filter || params.search_name) {
+          // The Fortnox API does not support these filters server-side, so
+          // fetch all suppliers and filter client-side before paginating.
+          const result = await fetchAllPages<FortnoxSupplierListItem, SupplierListResponse>(
+            "/3/suppliers",
+            {},
+            (r) => r.Suppliers || [],
+            (r) => r.MetaInformation?.["@TotalResources"] || 0
+          );
+          truncated = result.truncated;
+          truncationReason = result.truncationReason;
 
-        const response = await fortnoxRequest<SupplierListResponse>("/3/suppliers", "GET", undefined, queryParams);
-        const suppliers = response.Suppliers || [];
-        const total = response.MetaInformation?.["@TotalResources"] || suppliers.length;
+          let filtered = result.items;
+          if (params.filter) {
+            const wantActive = params.filter === "active";
+            filtered = filtered.filter((s) => (s.Active ?? true) === wantActive);
+          }
+          if (params.search_name) {
+            const needle = params.search_name.toLowerCase();
+            filtered = filtered.filter((s) => s.Name.toLowerCase().includes(needle));
+          }
+
+          total = filtered.length;
+          const startIndex = (params.page - 1) * params.limit;
+          suppliers = filtered.slice(startIndex, startIndex + params.limit);
+        } else {
+          const response = await fortnoxRequest<SupplierListResponse>("/3/suppliers", "GET", undefined, {
+            limit: params.limit,
+            page: params.page
+          });
+          suppliers = response.Suppliers || [];
+          total = response.MetaInformation?.["@TotalResources"] || suppliers.length;
+        }
 
         const output = {
           ...buildPaginationMeta(total, params.page, params.limit, suppliers.length),
+          ...(truncated ? { truncated, truncation_reason: truncationReason } : {}),
           suppliers: suppliers.map((s) => ({
             supplier_number: s.SupplierNumber,
             name: s.Name,
@@ -188,7 +221,7 @@ Returns:
           vat_number: supplier.VATNumber || null,
           currency: supplier.Currency || null,
           active: supplier.Active ?? true,
-          bank_account: supplier.BankAccount || null,
+          bank_account: supplier.BankAccountNumber || null,
           bg_number: supplier.BG || null,
           pg_number: supplier.PG || null,
           terms_of_payment: supplier.TermsOfPayment || null,
@@ -211,7 +244,7 @@ Returns:
             { label: "VAT Number", value: sanitizeInline(supplier.VATNumber) },
             { label: "Currency", value: sanitizeInline(supplier.Currency) },
             { label: "Active", value: supplier.Active },
-            { label: "Bank Account", value: sanitizeInline(supplier.BankAccount) },
+            { label: "Bank Account", value: sanitizeInline(supplier.BankAccountNumber) },
             { label: "Bankgiro", value: sanitizeInline(supplier.BG) },
             { label: "Plusgiro", value: sanitizeInline(supplier.PG) },
             { label: "Payment Terms", value: sanitizeInline(supplier.TermsOfPayment) },
@@ -247,6 +280,7 @@ Args:
   - pg_number (string): Plusgiro number
   - terms_of_payment (string): Payment terms code
   - comments (string): Internal comments
+  - response_format ('markdown' | 'json'): Output format
 
 Returns:
   The created supplier with assigned supplier number.`,
@@ -276,7 +310,7 @@ Returns:
         if (params.country_code) supplierData.CountryCode = params.country_code;
         if (params.currency) supplierData.Currency = params.currency;
         if (params.vat_number) supplierData.VATNumber = params.vat_number;
-        if (params.bank_account) supplierData.BankAccount = params.bank_account;
+        if (params.bank_account) supplierData.BankAccountNumber = params.bank_account;
         if (params.bg_number) supplierData.BG = params.bg_number;
         if (params.pg_number) supplierData.PG = params.pg_number;
         if (params.terms_of_payment) supplierData.TermsOfPayment = params.terms_of_payment;
@@ -322,7 +356,9 @@ Returns:
 
 Args:
   - supplier_number (string): Supplier number to update (required)
+  - active (boolean): Whether the supplier is active (set true to reactivate)
   - All other fields from create_supplier (only provided fields are updated)
+  - response_format ('markdown' | 'json'): Output format
 
 Returns:
   The updated supplier details.`,
@@ -347,8 +383,11 @@ Returns:
         if (params.zip_code) supplierData.ZipCode = params.zip_code;
         if (params.city) supplierData.City = params.city;
         if (params.country) supplierData.Country = params.country;
+        if (params.country_code) supplierData.CountryCode = params.country_code;
+        if (params.currency) supplierData.Currency = params.currency;
+        if (params.vat_number) supplierData.VATNumber = params.vat_number;
         if (params.active !== undefined) supplierData.Active = params.active;
-        if (params.bank_account) supplierData.BankAccount = params.bank_account;
+        if (params.bank_account) supplierData.BankAccountNumber = params.bank_account;
         if (params.bg_number) supplierData.BG = params.bg_number;
         if (params.pg_number) supplierData.PG = params.pg_number;
         if (params.terms_of_payment) supplierData.TermsOfPayment = params.terms_of_payment;
@@ -385,42 +424,47 @@ Returns:
     }
   );
 
-  // Delete supplier
+  // Deactivate supplier
   server.registerTool(
-    "fortnox_delete_supplier",
+    "fortnox_deactivate_supplier",
     {
-      title: "Delete Fortnox Supplier",
-      description: `Delete a supplier from Fortnox.
+      title: "Deactivate Fortnox Supplier",
+      description: `Deactivate a supplier in Fortnox.
 
-WARNING: This action cannot be undone. The supplier must not have any invoices.
+Suppliers cannot be deleted via the Fortnox API. This tool sets the supplier's
+Active flag to false instead, hiding it from active supplier lists. To
+reactivate, use fortnox_update_supplier with active=true.
 
 Args:
-  - supplier_number (string): Supplier number to delete (required)
+  - supplier_number (string): Supplier number to deactivate (required)
 
 Returns:
-  Confirmation of deletion.`,
-      inputSchema: DeleteSupplierSchema,
+  Confirmation of deactivation.`,
+      inputSchema: DeactivateSupplierSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
-        idempotentHint: false,
+        idempotentHint: true,
         openWorldHint: true
       }
     },
-    async (params: DeleteSupplierInput) => {
+    async (params: DeactivateSupplierInput) => {
       try {
-        await fortnoxRequest(
+        await fortnoxRequest<SupplierResponse>(
           `/3/suppliers/${encodeURIComponent(params.supplier_number)}`,
-          "DELETE"
+          "PUT",
+          { Supplier: { Active: false } }
         );
 
         const output = {
           success: true,
-          message: `Supplier ${params.supplier_number} deleted successfully`
+          message: `Supplier ${params.supplier_number} deactivated successfully`
         };
 
         return buildToolResponse(
-          `# Supplier Deleted\n\nSupplier **${params.supplier_number}** has been successfully deleted.`,
+          `# Supplier Deactivated\n\nSupplier **${params.supplier_number}** has been set to inactive. ` +
+            `Suppliers cannot be deleted via the Fortnox API. ` +
+            `Use fortnox_update_supplier with active=true to reactivate.`,
           output
         );
       } catch (error) {

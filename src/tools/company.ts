@@ -138,7 +138,7 @@ Returns:
   server.registerTool(
     "fortnox_list_financial_years",
     {
-      title: "List Financial Years",
+      title: "List Fortnox Financial Years",
       description: `List all financial years configured in Fortnox.
 
 IMPORTANT: Voucher tools (fortnox_list_vouchers, fortnox_account_activity, etc.)
