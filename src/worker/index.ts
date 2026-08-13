@@ -29,7 +29,11 @@ import { FORTNOX_SCOPES } from "../auth/credentials.js";
 // treats every export as a service and rejects anything else - so constants
 // from this module stay imported rather than re-exported.
 import { fortnoxAuthHandler } from "./fortnoxAuthHandler.js";
-import type { Env, FortnoxProps } from "./env.js";
+import {
+  getConfiguredCredentials,
+  type Env,
+  type FortnoxProps,
+} from "./env.js";
 
 const SERVER_VERSION = "1.0.1";
 
@@ -40,14 +44,15 @@ const SERVER_VERSION = "1.0.1";
  */
 let cachedProvider: DatabaseTokenProvider | null = null;
 
-function tokenProviderFor(env: Env): DatabaseTokenProvider {
+function tokenProviderFor(env: Env): DatabaseTokenProvider | null {
+  const credentials = getConfiguredCredentials(env);
+  if (!credentials) {
+    return null;
+  }
   if (!cachedProvider) {
     cachedProvider = new DatabaseTokenProvider(
       new KVTokenStorage(env.FORTNOX_TOKENS),
-      {
-        clientId: env.FORTNOX_CLIENT_ID,
-        clientSecret: env.FORTNOX_CLIENT_SECRET,
-      }
+      credentials
     );
   }
   return cachedProvider;
@@ -85,7 +90,22 @@ export class FortnoxMcpHandler extends WorkerEntrypoint<Env, FortnoxProps> {
       );
     }
 
-    initializeTokenProvider(tokenProviderFor(this.env));
+    const provider = tokenProviderFor(this.env);
+    if (!provider) {
+      console.error(
+        "[MCP] Not configured: FORTNOX_CLIENT_ID / FORTNOX_CLIENT_SECRET are not set"
+      );
+      return Response.json(
+        {
+          error: "server_not_configured",
+          error_description:
+            "The Fortnox app credentials are not set on this deployment.",
+        },
+        { status: 503 }
+      );
+    }
+
+    initializeTokenProvider(provider);
 
     const server = buildServer(this.env);
     const transport = new WebStandardStreamableHTTPServerTransport({

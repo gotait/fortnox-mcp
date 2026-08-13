@@ -15,18 +15,19 @@
       // Binding name is fixed by @cloudflare/workers-oauth-provider.
       // Holds clients, grants, authorization codes and issued tokens.
       "binding": "OAUTH_KV",
-      "id": "PLACEHOLDER_OAUTH_KV_ID"
+      "id": "90ce2b278ef4455db5d4d4069566e126"
     },
     {
       // Fortnox access/refresh tokens plus short-lived pending authorizations.
       "binding": "FORTNOX_TOKENS",
-      "id": "PLACEHOLDER_FORTNOX_TOKENS_ID"
+      "id": "c2a25fb852414df89b2859ea9d32f414"
     }
   ],
 
   "vars": {
-    // Set to "true" to register only read-only tools.
-    "FORTNOX_READ_ONLY": "false"
+    // Only read-only tools are registered. Set to "false" to expose the
+    // create/update/delete/bookkeep tools as well.
+    "FORTNOX_READ_ONLY": "true"
   },
 
   // FORTNOX_CLIENT_ID and FORTNOX_CLIENT_SECRET are secrets:
