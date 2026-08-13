@@ -21,7 +21,7 @@ import {
 import { DatabaseTokenProvider } from "../auth/databaseProvider.js";
 import { KVTokenStorage } from "../auth/storage/kv.js";
 import { FORTNOX_SCOPES } from "../auth/credentials.js";
-import type { Env } from "./env.js";
+import { getConfiguredCredentials, type Env } from "./env.js";
 
 /** Path Fortnox redirects back to. Must match the app's registered redirect URI. */
 export const FORTNOX_CALLBACK_PATH = "/oauth/fortnox/callback";
@@ -43,11 +43,20 @@ interface PendingAuthorization {
   createdAt: number;
 }
 
+/** Thrown when the Worker's Fortnox secrets have not been configured. */
+class NotConfiguredError extends Error {}
+
 function tokenProviderFor(env: Env): DatabaseTokenProvider {
-  return new DatabaseTokenProvider(new KVTokenStorage(env.FORTNOX_TOKENS), {
-    clientId: env.FORTNOX_CLIENT_ID,
-    clientSecret: env.FORTNOX_CLIENT_SECRET,
-  });
+  const credentials = getConfiguredCredentials(env);
+  if (!credentials) {
+    throw new NotConfiguredError(
+      "FORTNOX_CLIENT_ID and FORTNOX_CLIENT_SECRET are not set"
+    );
+  }
+  return new DatabaseTokenProvider(
+    new KVTokenStorage(env.FORTNOX_TOKENS),
+    credentials
+  );
 }
 
 function callbackUri(request: Request): string {
@@ -187,12 +196,25 @@ export const fortnoxAuthHandler: ExportedHandler<Env> = {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
 
-    if (request.method === "GET" && url.pathname === "/authorize") {
-      return handleAuthorize(request, env);
-    }
+    try {
+      if (request.method === "GET" && url.pathname === "/authorize") {
+        return await handleAuthorize(request, env);
+      }
 
-    if (request.method === "GET" && url.pathname === FORTNOX_CALLBACK_PATH) {
-      return handleCallback(request, env);
+      if (request.method === "GET" && url.pathname === FORTNOX_CALLBACK_PATH) {
+        return await handleCallback(request, env);
+      }
+    } catch (error) {
+      if (error instanceof NotConfiguredError) {
+        console.error(`[OAuth] Not configured: ${error.message}`);
+        return errorResponse(
+          "This server is not configured yet: the Fortnox app credentials are " +
+            "missing. Set them with `wrangler secret put FORTNOX_CLIENT_ID` " +
+            "and `wrangler secret put FORTNOX_CLIENT_SECRET`.",
+          503
+        );
+      }
+      throw error;
     }
 
     if (url.pathname === "/health") {
