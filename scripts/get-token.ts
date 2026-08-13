@@ -14,6 +14,7 @@
  */
 
 import http from "http";
+import crypto from "crypto";
 import { URL } from "url";
 import readline from "readline";
 
@@ -31,6 +32,7 @@ const CLIENT_ID = requireEnv("FORTNOX_CLIENT_ID");
 const CLIENT_SECRET = requireEnv("FORTNOX_CLIENT_SECRET");
 const REDIRECT_PORT = 8888;
 const REDIRECT_URI = `http://localhost:${REDIRECT_PORT}/callback`;
+const OAUTH_STATE = crypto.randomBytes(16).toString("hex");
 
 const SCOPES = [
   "customer",
@@ -48,12 +50,21 @@ async function getAuthorizationCode(): Promise<string> {
       if (url.pathname === "/callback") {
         const code = url.searchParams.get("code");
         const error = url.searchParams.get("error");
+        const state = url.searchParams.get("state");
 
         if (error) {
-          res.writeHead(400, { "Content-Type": "text/html" });
-          res.end(`<h1>Error: ${error}</h1><p>${url.searchParams.get("error_description")}</p>`);
+          // Plain text so attacker-influenced params can't be interpreted as HTML
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end(`OAuth error: ${error}\n${url.searchParams.get("error_description") || ""}`);
           reject(new Error(error));
           server.close();
+          return;
+        }
+
+        if (state !== OAUTH_STATE) {
+          // Not the callback we initiated — ignore it and keep waiting
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("State mismatch: this response does not belong to the flow started by this script.");
           return;
         }
 
@@ -81,7 +92,7 @@ async function getAuthorizationCode(): Promise<string> {
       authUrl.searchParams.set("scope", SCOPES.join(" "));
       authUrl.searchParams.set("response_type", "code");
       authUrl.searchParams.set("access_type", "offline");
-      authUrl.searchParams.set("state", "fortnox-mcp");
+      authUrl.searchParams.set("state", OAUTH_STATE);
 
       console.log("\n╔════════════════════════════════════════════════════════════╗");
       console.log("║           FORTNOX OAUTH2 AUTHORIZATION                      ║");
@@ -140,10 +151,9 @@ async function main() {
     console.log("║                    SUCCESS!                                 ║");
     console.log("╚════════════════════════════════════════════════════════════╝\n");
 
-    console.log("Add these to your environment:\n");
+    console.log("Add this to your environment (FORTNOX_CLIENT_ID and");
+    console.log("FORTNOX_CLIENT_SECRET are already set):\n");
     console.log("─────────────────────────────────────────────────────────────");
-    console.log(`export FORTNOX_CLIENT_ID="${CLIENT_ID}"`);
-    console.log(`export FORTNOX_CLIENT_SECRET="${CLIENT_SECRET}"`);
     console.log(`export FORTNOX_REFRESH_TOKEN="${tokens.refresh_token}"`);
     console.log("─────────────────────────────────────────────────────────────\n");
 
@@ -151,7 +161,7 @@ async function main() {
     console.log(JSON.stringify({
       "env": {
         "FORTNOX_CLIENT_ID": CLIENT_ID,
-        "FORTNOX_CLIENT_SECRET": CLIENT_SECRET,
+        "FORTNOX_CLIENT_SECRET": "<your FORTNOX_CLIENT_SECRET>",
         "FORTNOX_REFRESH_TOKEN": tokens.refresh_token
       }
     }, null, 2));
