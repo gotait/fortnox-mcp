@@ -22,6 +22,7 @@ import { registerOrderTools } from "../tools/orders.js";
 import { registerBIAnalyticsTools } from "../tools/biAnalytics.js";
 import { ITokenStorage } from "../auth/storage/types.js";
 import { IStateStore, getStateStoreFromEnv } from "../auth/storage/stateStore.js";
+import { rateLimit } from "./rateLimit.js";
 
 export interface RemoteServerOptions {
   serverUrl: string;
@@ -58,6 +59,12 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
       mode: "remote",
     });
   });
+
+  // Per-IP limit on the unauthenticated OAuth endpoints
+  app.use(
+    ["/authorize", "/token", "/register", "/revoke", "/oauth/fortnox/callback"],
+    rateLimit({ windowMs: 60_000, max: 30 })
+  );
 
   app.use(
     mcpAuthRouter({
@@ -125,6 +132,12 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
     requireBearerAuth({
       verifier: oauthProvider,
       resourceMetadataUrl: `${serverUrl}/.well-known/oauth-protected-resource`,
+    }),
+    // Per-user limit; one tenant can't starve the others
+    rateLimit({
+      windowMs: 60_000,
+      max: 120,
+      key: (req) => (req.auth && getUserIdFromAuth(req.auth)) || req.ip || "unknown",
     }),
     async (req: Request, res: Response) => {
       try {
