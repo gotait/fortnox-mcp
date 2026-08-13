@@ -328,7 +328,7 @@ Returns:
       inputSchema: UpdateSupplierSchema,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: true
       }

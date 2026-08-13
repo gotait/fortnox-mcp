@@ -52,19 +52,22 @@ async function getAuthorizationCode(): Promise<string> {
         const error = url.searchParams.get("error");
         const state = url.searchParams.get("state");
 
+        // Verify state before acting on anything else, so an unrelated request
+        // to this port (any page the browser has open can send one) can't abort
+        // the flow by passing ?error=...
+        if (state !== OAUTH_STATE) {
+          // Not the callback we initiated — ignore it and keep waiting
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("State mismatch: this response does not belong to the flow started by this script.");
+          return;
+        }
+
         if (error) {
           // Plain text so attacker-influenced params can't be interpreted as HTML
           res.writeHead(400, { "Content-Type": "text/plain" });
           res.end(`OAuth error: ${error}\n${url.searchParams.get("error_description") || ""}`);
           reject(new Error(error));
           server.close();
-          return;
-        }
-
-        if (state !== OAUTH_STATE) {
-          // Not the callback we initiated — ignore it and keep waiting
-          res.writeHead(400, { "Content-Type": "text/plain" });
-          res.end("State mismatch: this response does not belong to the flow started by this script.");
           return;
         }
 

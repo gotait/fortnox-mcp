@@ -336,7 +336,7 @@ Returns:
       inputSchema: UpdateCustomerSchema,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: true
       }

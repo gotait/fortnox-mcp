@@ -4,11 +4,21 @@ import { ITokenProvider, TokenInfo, AuthRequiredError } from "./types.js";
 import { ITokenStorage } from "./storage/types.js";
 import { getFortnoxCredentials } from "./credentials.js";
 
-// Fortnox rejects an expired or revoked refresh token with 400 (invalid_grant).
-// 401 means bad client credentials and 5xx/network errors are transient —
-// neither invalidates the user's refresh token.
+// Fortnox rejects an expired or revoked refresh token with 400 invalid_grant.
+// Other 400s (invalid_request, invalid_client, unsupported_grant_type) mean the
+// request or our credentials are wrong, and 401/5xx/network errors are
+// transient or configuration problems — none of those invalidate the user's
+// refresh token, so the error code has to be checked and not just the status.
 function isRefreshTokenRejected(error: unknown): boolean {
-  return error instanceof AxiosError && error.response?.status === 400;
+  if (!(error instanceof AxiosError) || error.response?.status !== 400) {
+    return false;
+  }
+
+  const data = error.response.data;
+  if (typeof data === "string") {
+    return data.includes("invalid_grant");
+  }
+  return (data as { error?: unknown } | undefined)?.error === "invalid_grant";
 }
 
 // Token provider for remote mode (multi-user with database storage)
@@ -158,9 +168,31 @@ export class DatabaseTokenProvider implements ITokenProvider {
       return newTokens.accessToken;
     } catch (error) {
       if (isRefreshTokenRejected(error)) {
-        await this.storage.delete(userId);
+        await this.deleteRejectedTokens(userId, tokens.refreshToken);
       }
       throw this.handleAuthError(error, "Failed to refresh access token");
+    }
+  }
+
+  // Refresh tokens rotate on every use, and refreshes are only deduplicated
+  // within a single process: a concurrent invocation may already have refreshed
+  // this user and stored a valid new token, which is what made the token we
+  // just used invalid. Only drop the stored tokens if they are still the ones
+  // Fortnox rejected, so a losing race can't wipe a working credential.
+  private async deleteRejectedTokens(
+    userId: string,
+    rejectedRefreshToken: string
+  ): Promise<void> {
+    try {
+      const current = await this.storage.get(userId);
+      if (current && current.refreshToken !== rejectedRefreshToken) {
+        return;
+      }
+      await this.storage.delete(userId);
+    } catch (storageError) {
+      // Storage is unavailable; keep the tokens rather than losing them to an
+      // infrastructure blip. The refresh error is reported to the caller.
+      console.error("[Auth] Failed to clear rejected tokens:", storageError);
     }
   }
 

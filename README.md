@@ -192,6 +192,7 @@ npm run build
 | `FORTNOX_ACCESS_TOKEN` | No | Current access token (auto-refreshed) |
 | `TRANSPORT` | No | `stdio` (default) or `http` |
 | `PORT` | No | HTTP port (default: 3000) |
+| `HOST` | No | Interface to bind in `http` mode (default: `127.0.0.1`). The local `/mcp` endpoint has no authentication, so only set this (e.g. `0.0.0.0`) if you intend to expose it to other machines |
 
 #### Remote Mode (AUTH_MODE=remote)
 
@@ -199,7 +200,7 @@ npm run build
 |----------|----------|-------------|
 | `AUTH_MODE` | Yes | Set to `remote` |
 | `SERVER_URL` | Yes | Public URL of your server |
-| `JWT_SECRET` | Yes | Secret for signing JWT tokens |
+| `JWT_SECRET` | Yes | Secret for signing JWT tokens. Must be at least 32 characters — the server refuses to start otherwise (generate with `openssl rand -hex 32`) |
 | `FORTNOX_CLIENT_ID` | Yes | Your Fortnox app client ID |
 | `FORTNOX_CLIENT_SECRET` | Yes | Your Fortnox app client secret |
 | `UPSTASH_REDIS_REST_URL` | Yes* | Upstash Redis URL for token storage |
@@ -228,6 +229,10 @@ TRANSPORT=http PORT=3000 node dist/index.js
 ```
 
 Then connect to `http://localhost:3000/mcp`
+
+This endpoint is unauthenticated, so it binds to `127.0.0.1` only. To reach it from
+another machine, set `HOST` explicitly (e.g. `HOST=0.0.0.0`) and put your own
+authentication in front of it.
 
 ## Tool Examples
 
@@ -378,7 +383,7 @@ In your Vercel project settings, add these environment variables:
 |----------|-------------|
 | `AUTH_MODE` | Set to `remote` |
 | `SERVER_URL` | Your Vercel deployment URL (e.g., `https://your-app.vercel.app`) |
-| `JWT_SECRET` | A random secret string for signing tokens (generate with `openssl rand -hex 32`) |
+| `JWT_SECRET` | A random secret string of at least 32 characters for signing tokens (generate with `openssl rand -hex 32`) |
 | `FORTNOX_CLIENT_ID` | Your Fortnox app client ID |
 | `FORTNOX_CLIENT_SECRET` | Your Fortnox app client secret |
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL |
