@@ -2,7 +2,11 @@ import axios, { AxiosError } from "axios";
 import { FORTNOX_OAUTH_URL, TOKEN_REFRESH_BUFFER_MS } from "../constants.js";
 import { ITokenProvider, TokenInfo, AuthRequiredError } from "./types.js";
 import { getFortnoxCredentials } from "./credentials.js";
-import { readPersistedTokens, persistTokens } from "./fileTokenStore.js";
+import {
+  readPersistedTokens,
+  persistTokens,
+  clearPersistedTokens,
+} from "./fileTokenStore.js";
 
 // Fortnox rejects an expired or revoked refresh token with 400 invalid_grant.
 // Other 400s (invalid_request, invalid_client, unsupported_grant_type) mean the
@@ -159,7 +163,12 @@ export class EnvVarTokenProvider implements ITokenProvider {
       return this.tokens!.accessToken;
     } catch (error) {
       if (isRefreshTokenRejected(error)) {
+        // Drop the persisted copy as well, not just the in-memory one: the
+        // constructor prefers the file over FORTNOX_REFRESH_TOKEN, so leaving
+        // the rejected token on disk means re-running scripts/get-token.ts and
+        // restarting still loads the dead token.
         this.tokens = null;
+        clearPersistedTokens();
       }
       throw this.handleAuthError(error, "Failed to refresh access token");
     }

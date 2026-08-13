@@ -33,6 +33,7 @@ const CLIENT_SECRET = requireEnv("FORTNOX_CLIENT_SECRET");
 const REDIRECT_PORT = 8888;
 const REDIRECT_URI = `http://localhost:${REDIRECT_PORT}/callback`;
 const OAUTH_STATE = crypto.randomBytes(16).toString("hex");
+const AUTH_TIMEOUT_MS = 10 * 60 * 1000;
 
 const SCOPES = [
   "customer",
@@ -44,48 +45,86 @@ const SCOPES = [
 
 async function getAuthorizationCode(): Promise<string> {
   return new Promise((resolve, reject) => {
+    // Ignoring callbacks whose state does not match is the right call, but on
+    // its own it can leave the script sitting at "Waiting for authorization..."
+    // forever — e.g. if the authorization server drops `state` on its error
+    // redirect. Bound the wait and report why it ended.
+    const timer = setTimeout(() => {
+      console.error(
+        `\nTimed out after ${AUTH_TIMEOUT_MS / 60000} minutes waiting for the Fortnox callback.`
+      );
+      server.close();
+      reject(new Error("Timed out waiting for authorization"));
+    }, AUTH_TIMEOUT_MS);
+
+    const finish = (fn: () => void): void => {
+      clearTimeout(timer);
+      fn();
+    };
+
     const server = http.createServer((req, res) => {
       const url = new URL(req.url || "", `http://localhost:${REDIRECT_PORT}`);
 
-      if (url.pathname === "/callback") {
-        const code = url.searchParams.get("code");
-        const error = url.searchParams.get("error");
-        const state = url.searchParams.get("state");
+      if (url.pathname !== "/callback") {
+        // Always answer: an unanswered request (a favicon fetch, a stray probe)
+        // leaves the browser spinning on a connection that is never closed.
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Not found");
+        return;
+      }
 
-        // Verify state before acting on anything else, so an unrelated request
-        // to this port (any page the browser has open can send one) can't abort
-        // the flow by passing ?error=...
-        if (state !== OAUTH_STATE) {
-          // Not the callback we initiated — ignore it and keep waiting
-          res.writeHead(400, { "Content-Type": "text/plain" });
-          res.end("State mismatch: this response does not belong to the flow started by this script.");
-          return;
-        }
+      const code = url.searchParams.get("code");
+      const error = url.searchParams.get("error");
+      const state = url.searchParams.get("state");
 
-        if (error) {
-          // Plain text so attacker-influenced params can't be interpreted as HTML
-          res.writeHead(400, { "Content-Type": "text/plain" });
-          res.end(`OAuth error: ${error}\n${url.searchParams.get("error_description") || ""}`);
+      // Verify state before acting on anything else, so an unrelated request
+      // to this port (any page the browser has open can send one) can't abort
+      // the flow by passing ?error=...
+      if (state !== OAUTH_STATE) {
+        // Not the callback we initiated — ignore it and keep waiting. Say so
+        // on the terminal too, so the user is not left guessing why nothing
+        // happened after they authorized in the browser.
+        console.error(
+          `Ignored a /callback request with a ${state === null ? "missing" : "mismatched"} state parameter.`
+        );
+        res.writeHead(400, { "Content-Type": "text/plain" });
+        res.end("State mismatch: this response does not belong to the flow started by this script.");
+        return;
+      }
+
+      if (error) {
+        // Plain text so attacker-influenced params can't be interpreted as HTML
+        res.writeHead(400, { "Content-Type": "text/plain" });
+        res.end(`OAuth error: ${error}\n${url.searchParams.get("error_description") || ""}`);
+        finish(() => {
           reject(new Error(error));
           server.close();
-          return;
-        }
-
-        if (code) {
-          res.writeHead(200, { "Content-Type": "text/html" });
-          res.end(`
-            <html>
-              <body style="font-family: sans-serif; padding: 40px; text-align: center;">
-                <h1>✓ Authorization Successful!</h1>
-                <p>You can close this window and return to the terminal.</p>
-                <p style="color: #666;">Authorization code received.</p>
-              </body>
-            </html>
-          `);
-          resolve(code);
-          setTimeout(() => server.close(), 1000);
-        }
+        });
+        return;
       }
+
+      // State matched but the response carries neither a code nor an error:
+      // nothing to act on, and leaving it unanswered would hang the browser.
+      if (!code) {
+        res.writeHead(400, { "Content-Type": "text/plain" });
+        res.end("Callback contained neither an authorization code nor an error.");
+        return;
+      }
+
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(`
+        <html>
+          <body style="font-family: sans-serif; padding: 40px; text-align: center;">
+            <h1>✓ Authorization Successful!</h1>
+            <p>You can close this window and return to the terminal.</p>
+            <p style="color: #666;">Authorization code received.</p>
+          </body>
+        </html>
+      `);
+      finish(() => {
+        resolve(code);
+        setTimeout(() => server.close(), 1000);
+      });
     });
 
     server.listen(REDIRECT_PORT, () => {
@@ -111,7 +150,7 @@ async function getAuthorizationCode(): Promise<string> {
       if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") {
         console.error(`Port ${REDIRECT_PORT} is already in use. Please close other applications using it.`);
       }
-      reject(err);
+      finish(() => reject(err));
     });
   });
 }
