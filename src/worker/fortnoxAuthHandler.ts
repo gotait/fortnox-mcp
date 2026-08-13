@@ -20,8 +20,11 @@ import {
 
 import { DatabaseTokenProvider } from "../auth/databaseProvider.js";
 import { KVTokenStorage } from "../auth/storage/kv.js";
-import { FORTNOX_SCOPES } from "../auth/credentials.js";
-import { getConfiguredCredentials, type Env } from "./env.js";
+import {
+  getConfiguredCredentials,
+  getRequestedScopes,
+  type Env,
+} from "./env.js";
 
 /** Path Fortnox redirects back to. Must match the app's registered redirect URI. */
 export const FORTNOX_CALLBACK_PATH = "/oauth/fortnox/callback";
@@ -122,7 +125,7 @@ async function handleAuthorize(request: Request, env: Env): Promise<Response> {
 
   const authorizationUrl = tokenProviderFor(env).getAuthorizationUrl(
     callbackUri(request),
-    FORTNOX_SCOPES,
+    getRequestedScopes(env),
     state
   );
 

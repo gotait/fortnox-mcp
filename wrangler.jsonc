@@ -24,13 +24,22 @@
     }
   ],
 
+  // Non-secret configuration. Editing these requires a redeploy; change them
+  // without one from the dashboard (Workers > fortnox-mcp > Settings >
+  // Variables) or with `wrangler deploy --var NAME:value`.
   "vars": {
-    // Only read-only tools are registered. Set to "false" to expose the
-    // create/update/delete/bookkeep tools as well.
-    "FORTNOX_READ_ONLY": "true"
+    // "true"  -> only the 34 read-only tools are registered
+    // "false" -> all 51, including create/update/delete/approve/bookkeep
+    "FORTNOX_READ_ONLY": "true",
+
+    // Scopes requested from Fortnox, space- or comma-separated. Must be a
+    // subset of what the Fortnox app grants: requesting one it does not have
+    // fails the whole authorization.
+    "FORTNOX_SCOPES": "companyinformation customer invoice supplier bookkeeping"
   },
 
-  // FORTNOX_CLIENT_ID and FORTNOX_CLIENT_SECRET are secrets:
+  // Secrets - never put these in vars, they would be readable in the
+  // dashboard and committed to git:
   //   npx wrangler secret put FORTNOX_CLIENT_ID
   //   npx wrangler secret put FORTNOX_CLIENT_SECRET
 
