@@ -4,6 +4,13 @@ import { ITokenProvider, TokenInfo, AuthRequiredError } from "./types.js";
 import { getFortnoxCredentials } from "./credentials.js";
 import { readPersistedTokens, persistTokens } from "./fileTokenStore.js";
 
+// Fortnox rejects an expired or revoked refresh token with 400 (invalid_grant).
+// 401 means bad client credentials and 5xx/network errors are transient —
+// neither invalidates the refresh token.
+function isRefreshTokenRejected(error: unknown): boolean {
+  return error instanceof AxiosError && error.response?.status === 400;
+}
+
 interface TokenResponse {
   access_token: string;
   refresh_token: string;
@@ -141,7 +148,9 @@ export class EnvVarTokenProvider implements ITokenProvider {
       this.storeTokens(response.data);
       return this.tokens!.accessToken;
     } catch (error) {
-      this.tokens = null;
+      if (isRefreshTokenRejected(error)) {
+        this.tokens = null;
+      }
       throw this.handleAuthError(error, "Failed to refresh access token");
     }
   }
