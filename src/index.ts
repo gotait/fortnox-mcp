@@ -115,8 +115,16 @@ async function runLocalHTTP(): Promise<void> {
   });
 
   const port = parseInt(process.env.PORT || "3000", 10);
-  app.listen(port, () => {
-    console.error(`[FortnoxMCP] http://localhost:${port}/mcp`);
+  // The local HTTP transport has no authentication, so only bind beyond
+  // loopback when explicitly requested via HOST.
+  const host = process.env.HOST || "127.0.0.1";
+  app.listen(port, host, () => {
+    console.error(`[FortnoxMCP] http://${host}:${port}/mcp`);
+    if (host !== "127.0.0.1" && host !== "localhost") {
+      console.error(
+        `[FortnoxMCP] WARNING: /mcp has no authentication and is reachable by anyone who can connect to ${host}:${port}`
+      );
+    }
   });
 }
 
