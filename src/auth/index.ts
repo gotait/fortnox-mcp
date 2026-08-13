@@ -10,20 +10,13 @@ import { ITokenProvider } from "./types.js";
 import { EnvVarTokenProvider } from "./envVarProvider.js";
 import { DatabaseTokenProvider } from "./databaseProvider.js";
 import { getStorageFromEnv } from "./storage/index.js";
+import { setDefaultTokenProviderFactory } from "./registry.js";
 
-// Global token provider instance
-let tokenProvider: ITokenProvider | null = null;
+export { initializeTokenProvider, getTokenProvider } from "./registry.js";
 
-export function initializeTokenProvider(provider: ITokenProvider): void {
-  tokenProvider = provider;
-}
-
-export function getTokenProvider(): ITokenProvider {
-  if (!tokenProvider) {
-    tokenProvider = new EnvVarTokenProvider();
-  }
-  return tokenProvider;
-}
+// Importing this barrel means running on Node, where an uninitialized provider
+// should still fall back to reading credentials out of the environment.
+setDefaultTokenProviderFactory(() => new EnvVarTokenProvider());
 
 export function createTokenProvider(mode: "local" | "remote"): ITokenProvider {
   if (mode === "remote") {

@@ -1,4 +1,3 @@
-import axios, { AxiosError } from "axios";
 import { FORTNOX_OAUTH_URL, TOKEN_REFRESH_BUFFER_MS } from "../constants.js";
 import { ITokenProvider, TokenInfo, AuthRequiredError } from "./types.js";
 import { getFortnoxCredentials } from "./credentials.js";
@@ -7,6 +6,7 @@ import {
   persistTokens,
   clearPersistedTokens,
 } from "./fileTokenStore.js";
+import { HttpResponseError, basicAuthHeader, postForm } from "../services/http.js";
 
 // Fortnox rejects an expired or revoked refresh token with 400 invalid_grant.
 // Other 400s (invalid_request, invalid_client, unsupported_grant_type) mean the
@@ -14,11 +14,11 @@ import {
 // transient or configuration problems — none of those invalidate the refresh
 // token, so the error code has to be checked and not just the status.
 function isRefreshTokenRejected(error: unknown): boolean {
-  if (!(error instanceof AxiosError) || error.response?.status !== 400) {
+  if (!(error instanceof HttpResponseError) || error.status !== 400) {
     return false;
   }
 
-  const data = error.response.data;
+  const data = error.data;
   if (typeof data === "string") {
     return data.includes("invalid_grant");
   }
@@ -96,25 +96,19 @@ export class EnvVarTokenProvider implements ITokenProvider {
 
   async exchangeAuthorizationCode(code: string, redirectUri: string): Promise<void> {
     const tokenUrl = `${FORTNOX_OAUTH_URL}/token`;
-    const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64");
 
     try {
-      const response = await axios.post<TokenResponse>(
+      const data = await postForm<TokenResponse>(
         tokenUrl,
         new URLSearchParams({
           grant_type: "authorization_code",
           code: code,
           redirect_uri: redirectUri
         }),
-        {
-          headers: {
-            "Authorization": `Basic ${auth}`,
-            "Content-Type": "application/x-www-form-urlencoded"
-          }
-        }
+        { Authorization: basicAuthHeader(this.clientId, this.clientSecret) }
       );
 
-      this.storeTokens(response.data);
+      this.storeTokens(data);
     } catch (error) {
       throw this.handleAuthError(error, "Failed to exchange authorization code");
     }
@@ -142,24 +136,18 @@ export class EnvVarTokenProvider implements ITokenProvider {
     }
 
     const tokenUrl = `${FORTNOX_OAUTH_URL}/token`;
-    const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64");
 
     try {
-      const response = await axios.post<TokenResponse>(
+      const data = await postForm<TokenResponse>(
         tokenUrl,
         new URLSearchParams({
           grant_type: "refresh_token",
           refresh_token: this.tokens.refreshToken
         }),
-        {
-          headers: {
-            "Authorization": `Basic ${auth}`,
-            "Content-Type": "application/x-www-form-urlencoded"
-          }
-        }
+        { Authorization: basicAuthHeader(this.clientId, this.clientSecret) }
       );
 
-      this.storeTokens(response.data);
+      this.storeTokens(data);
       return this.tokens!.accessToken;
     } catch (error) {
       if (isRefreshTokenRejected(error)) {
@@ -187,9 +175,11 @@ export class EnvVarTokenProvider implements ITokenProvider {
   }
 
   private handleAuthError(error: unknown, context: string): Error {
-    if (error instanceof AxiosError) {
-      const status = error.response?.status;
-      const data = error.response?.data;
+    if (error instanceof HttpResponseError) {
+      const status = error.status;
+      const data = error.data as
+        | { error_description?: string; error?: string }
+        | undefined;
 
       if (status === 401) {
         return new Error(

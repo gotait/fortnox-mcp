@@ -29,3 +29,7 @@ coverage/
 # MCP Registry tokens
 .mcpregistry_*
 .vercel
+
+# Cloudflare Workers
+.dev.vars
+.wrangler/

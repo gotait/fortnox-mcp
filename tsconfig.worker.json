@@ -1,0 +1,18 @@
+{
+  // Typecheck-only pass over the Cloudflare Worker entry point. Wrangler does
+  // the actual bundling; this exists so `npm run typecheck:worker` catches
+  // Workers-specific type errors that the Node build (tsconfig.json) skips.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "types": ["@cloudflare/workers-types"],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
