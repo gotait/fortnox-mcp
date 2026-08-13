@@ -20,6 +20,12 @@ export interface IStateStore {
    * callers both read the value and both conclude it was unused.
    */
   take<T>(key: string): Promise<T | null>;
+
+  /**
+   * Reset an existing key's TTL, for records that should expire on idleness
+   * rather than on a fixed deadline. No-op when the key is already gone.
+   */
+  touch(key: string, ttlSeconds: number): Promise<void>;
 }
 
 /**
@@ -40,6 +46,18 @@ export class MemoryStateStore implements IStateStore {
     const value = this.read(key);
     this.entries.delete(key);
     return value as T | null;
+  }
+
+  async touch(key: string, ttlSeconds: number): Promise<void> {
+    const entry = this.entries.get(key);
+    if (!entry) return;
+
+    if (entry.expiresAt !== null && Date.now() >= entry.expiresAt) {
+      this.entries.delete(key);
+      return;
+    }
+
+    entry.expiresAt = Date.now() + ttlSeconds * 1000;
   }
 
   private read(key: string): unknown | null {
@@ -126,6 +144,11 @@ export class UpstashRedisStateStore implements IStateStore {
     // interleaved by another instance exchanging the same code
     const value = await redis.getdel<T>(this.key(key));
     return value ?? null;
+  }
+
+  async touch(key: string, ttlSeconds: number): Promise<void> {
+    const redis = await this.getRedis();
+    await redis.expire(this.key(key), ttlSeconds);
   }
 
   async set(key: string, value: unknown, ttlSeconds?: number): Promise<void> {

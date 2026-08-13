@@ -23,10 +23,15 @@ const JWT_ALGORITHM = "HS256";
 const ACCESS_TOKEN_EXPIRES_IN = 3600; // 1 hour
 const REFRESH_TOKEN_EXPIRES_IN = 90 * 24 * 3600; // 90 days
 
-// OAuth flow state lifetimes
-const PENDING_AUTH_TTL_SECONDS = 10 * 60;
+// OAuth flow state lifetimes. The pending window has to cover a full
+// interactive Fortnox login — SSO, 2FA and company selection — so it is
+// generous; the authorization code, which is machine-to-machine, is not.
+const PENDING_AUTH_TTL_SECONDS = 30 * 60;
 const AUTH_CODE_TTL_SECONDS = 5 * 60;
-// Client registrations must outlive the refresh tokens issued to them
+// Client registrations expire on idleness, not on a deadline: every refresh
+// mints a token good for another REFRESH_TOKEN_EXPIRES_IN, so a fixed TTL
+// would strand clients still holding valid refresh tokens. getClient extends
+// this on every hit.
 const CLIENT_TTL_SECONDS = REFRESH_TOKEN_EXPIRES_IN;
 
 // Links MCP <-> Fortnox OAuth. Only JSON-serializable fields, since this
@@ -431,10 +436,16 @@ class StateStoreClientsStore implements OAuthRegisteredClientsStore {
   constructor(private stateStore: IStateStore) {}
 
   async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
-    const client = await this.stateStore.get<OAuthClientInformationFull>(
-      `client:${clientId}`
-    );
-    return client ?? undefined;
+    const key = `client:${clientId}`;
+    const client = await this.stateStore.get<OAuthClientInformationFull>(key);
+    if (!client) return undefined;
+
+    // Slide the expiry forward on use. Every /token call authenticates through
+    // here, so a client that keeps refreshing keeps its registration; only one
+    // idle for a full refresh token lifetime is dropped.
+    await this.stateStore.touch(key, CLIENT_TTL_SECONDS);
+
+    return client;
   }
 
   async registerClient(
