@@ -182,7 +182,10 @@ Error Handling:
           (r) => r.MetaInformation?.["@TotalResources"] || 0
         );
 
-        const invoices = result.items;
+        // Exclude cancelled invoices from statistics unless they were explicitly requested
+        const invoices = params.filter === "cancelled"
+          ? result.items
+          : result.items.filter(inv => !inv.Cancelled);
         const overallStats = calculateStats(invoices);
 
         // Build grouped statistics if requested
@@ -368,7 +371,8 @@ Error Handling:
           (r) => r.MetaInformation?.["@TotalResources"] || 0
         );
 
-        const invoices = result.items;
+        // Exclude cancelled invoices so they don't inflate customer revenue
+        const invoices = result.items.filter(inv => !inv.Cancelled);
 
         // Group by customer
         const customerMap = new Map<string, {
@@ -567,7 +571,8 @@ Error Handling:
           (r) => r.MetaInformation?.["@TotalResources"] || 0
         );
 
-        let invoices = result.items;
+        // Exclude cancelled invoices so they don't appear as receivables
+        let invoices = result.items.filter(inv => !inv.Cancelled);
 
         // Apply min_amount filter
         if (params.min_amount !== undefined) {
