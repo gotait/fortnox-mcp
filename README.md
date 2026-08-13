@@ -450,12 +450,30 @@ In your Fortnox app settings, add the redirect URI:
 https://<worker>.<subdomain>.workers.dev/oauth/fortnox/callback
 ```
 
-#### Read-only deployments
+#### Configuration
 
-`wrangler.jsonc` sets `FORTNOX_READ_ONLY`. While it is `"true"` only the 34
-read tools are registered and the write tools (create/update/delete/approve/
-bookkeep/cancel/credit/send-email) are never exposed. Set it to `"false"` to
-expose all 51.
+Everything is driven by the environment. Secrets go through
+`wrangler secret put`; the rest live in `vars` in `wrangler.jsonc`.
+
+| Variable | Kind | Default | Description |
+|----------|------|---------|-------------|
+| `FORTNOX_CLIENT_ID` | secret | — | Fortnox app client ID |
+| `FORTNOX_CLIENT_SECRET` | secret | — | Fortnox app client secret |
+| `FORTNOX_READ_ONLY` | var | `"true"` | `"true"` registers only the 34 read tools; `"false"` exposes all 51, including create/update/delete/approve/bookkeep/cancel/credit/send-email |
+| `FORTNOX_SCOPES` | var | the five below | Scopes requested from Fortnox, space- or comma-separated. Must be a subset of what the app grants |
+
+Default scopes: `companyinformation customer invoice supplier bookkeeping`.
+
+Changing a `var` takes effect on the next deploy. To change one without
+editing the file, use the dashboard (**Workers → fortnox-mcp → Settings →
+Variables**) or:
+
+```bash
+npx wrangler deploy --var FORTNOX_READ_ONLY:false
+```
+
+Never put the client secret in `vars` - those are readable in the dashboard
+and committed to git.
 
 #### Local development
 

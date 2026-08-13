@@ -31,6 +31,7 @@ import { FORTNOX_SCOPES } from "../auth/credentials.js";
 import { fortnoxAuthHandler } from "./fortnoxAuthHandler.js";
 import {
   getConfiguredCredentials,
+  isReadOnly,
   type Env,
   type FortnoxProps,
 } from "./env.js";
@@ -65,7 +66,7 @@ function buildServer(env: Env): McpServer {
   });
 
   // Must run before registration so the filter covers every tool.
-  if (env.FORTNOX_READ_ONLY === "true") {
+  if (isReadOnly(env)) {
     applyReadOnlyMode(server);
   }
 

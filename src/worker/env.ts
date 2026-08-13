@@ -1,4 +1,5 @@
 import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
+import { FORTNOX_SCOPES } from "../auth/credentials.js";
 
 /**
  * Bindings and secrets available to the Worker.
@@ -21,6 +22,27 @@ export interface Env {
 
   /** When "true", only read-only tools are registered. */
   FORTNOX_READ_ONLY?: string;
+
+  /**
+   * Scopes requested from Fortnox, separated by spaces or commas. Defaults to
+   * FORTNOX_SCOPES. Override when the Fortnox app grants a different set -
+   * requesting a scope the app does not have fails the whole authorization.
+   */
+  FORTNOX_SCOPES?: string;
+}
+
+/** True when the deployment should expose only read-only tools. */
+export function isReadOnly(env: Env): boolean {
+  return env.FORTNOX_READ_ONLY === "true";
+}
+
+/** Scopes to request from Fortnox, from the environment or the default set. */
+export function getRequestedScopes(env: Env): string[] {
+  const configured = env.FORTNOX_SCOPES?.trim();
+  if (!configured) {
+    return FORTNOX_SCOPES;
+  }
+  return configured.split(/[\s,]+/).filter(Boolean);
 }
 
 /**
