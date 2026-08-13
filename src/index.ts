@@ -34,16 +34,7 @@ import { getFortnoxAuth } from "./services/auth.js";
 import { getStorageFromEnv } from "./auth/storage/index.js";
 import { runRemoteServer } from "./server/remote.js";
 import { isReadOnlyMode, applyReadOnlyMode } from "./server/readOnly.js";
-import { registerCustomerTools } from "./tools/customers.js";
-import { registerInvoiceTools } from "./tools/invoices.js";
-import { registerSupplierTools } from "./tools/suppliers.js";
-import { registerAccountTools } from "./tools/accounts.js";
-import { registerVoucherTools } from "./tools/vouchers.js";
-import { registerCompanyTools } from "./tools/company.js";
-import { registerAnalyticsTools } from "./tools/analytics.js";
-import { registerSupplierInvoiceTools } from "./tools/supplierInvoices.js";
-import { registerOrderTools } from "./tools/orders.js";
-import { registerBIAnalyticsTools } from "./tools/biAnalytics.js";
+import { registerAllTools } from "./server/tools.js";
 
 function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -55,16 +46,7 @@ function createMcpServer(): McpServer {
     applyReadOnlyMode(server);
   }
 
-  registerCustomerTools(server);
-  registerInvoiceTools(server);
-  registerSupplierTools(server);
-  registerSupplierInvoiceTools(server);
-  registerAccountTools(server);
-  registerVoucherTools(server);
-  registerCompanyTools(server);
-  registerAnalyticsTools(server);
-  registerOrderTools(server);
-  registerBIAnalyticsTools(server);
+  registerAllTools(server);
 
   return server;
 }

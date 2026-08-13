@@ -1,0 +1,39 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fortnox-mcp",
+  "main": "src/worker/index.ts",
+
+  // nodejs_compat provides async_hooks (AsyncLocalStorage), which carries the
+  // per-request user id down to the Fortnox API client. The 2025-04-01+
+  // compatibility date also populates process.env from vars and secrets, which
+  // the read-only mode check relies on.
+  "compatibility_date": "2025-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "kv_namespaces": [
+    {
+      // Binding name is fixed by @cloudflare/workers-oauth-provider.
+      // Holds clients, grants, authorization codes and issued tokens.
+      "binding": "OAUTH_KV",
+      "id": "PLACEHOLDER_OAUTH_KV_ID"
+    },
+    {
+      // Fortnox access/refresh tokens plus short-lived pending authorizations.
+      "binding": "FORTNOX_TOKENS",
+      "id": "PLACEHOLDER_FORTNOX_TOKENS_ID"
+    }
+  ],
+
+  "vars": {
+    // Set to "true" to register only read-only tools.
+    "FORTNOX_READ_ONLY": "false"
+  },
+
+  // FORTNOX_CLIENT_ID and FORTNOX_CLIENT_SECRET are secrets:
+  //   npx wrangler secret put FORTNOX_CLIENT_ID
+  //   npx wrangler secret put FORTNOX_CLIENT_SECRET
+
+  "observability": {
+    "enabled": true
+  }
+}

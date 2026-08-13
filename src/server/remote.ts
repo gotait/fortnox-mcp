@@ -11,16 +11,7 @@ import {
 } from "../auth/index.js";
 import { runWithContext } from "../auth/context.js";
 import { isReadOnlyMode, applyReadOnlyMode } from "./readOnly.js";
-import { registerCustomerTools } from "../tools/customers.js";
-import { registerInvoiceTools } from "../tools/invoices.js";
-import { registerSupplierTools } from "../tools/suppliers.js";
-import { registerSupplierInvoiceTools } from "../tools/supplierInvoices.js";
-import { registerAccountTools } from "../tools/accounts.js";
-import { registerVoucherTools } from "../tools/vouchers.js";
-import { registerCompanyTools } from "../tools/company.js";
-import { registerAnalyticsTools } from "../tools/analytics.js";
-import { registerOrderTools } from "../tools/orders.js";
-import { registerBIAnalyticsTools } from "../tools/biAnalytics.js";
+import { registerAllTools } from "./tools.js";
 import { ITokenStorage } from "../auth/storage/types.js";
 
 export interface RemoteServerOptions {
@@ -109,16 +100,7 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
     applyReadOnlyMode(mcpServer);
   }
 
-  registerCustomerTools(mcpServer);
-  registerInvoiceTools(mcpServer);
-  registerSupplierTools(mcpServer);
-  registerSupplierInvoiceTools(mcpServer);
-  registerAccountTools(mcpServer);
-  registerVoucherTools(mcpServer);
-  registerCompanyTools(mcpServer);
-  registerAnalyticsTools(mcpServer);
-  registerOrderTools(mcpServer);
-  registerBIAnalyticsTools(mcpServer);
+  registerAllTools(mcpServer);
 
   // Protected MCP endpoint
   app.post(
