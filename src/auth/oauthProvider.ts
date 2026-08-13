@@ -70,6 +70,13 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
     serverUrl: string,
     tokenStorage: ITokenStorage
   ) {
+    if (jwtSecret.length < 32) {
+      throw new Error(
+        "JWT_SECRET must be at least 32 characters: every user's session " +
+        "and token isolation depends on it being unguessable. " +
+        "Generate one with: openssl rand -base64 32"
+      );
+    }
     this.jwtSecret = new TextEncoder().encode(jwtSecret);
     this.serverUrl = serverUrl;
     this.tokenProvider = new DatabaseTokenProvider(tokenStorage);
@@ -303,6 +310,7 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
     try {
       const { payload } = await jose.jwtVerify(token, this.jwtSecret, {
         issuer: this.serverUrl,
+        algorithms: [JWT_ALGORITHM],
       });
 
       if (payload.type !== expectedType) {
