@@ -15,7 +15,6 @@ import {
 import {
   periodToDateRange,
   getPeriodDescription,
-  getPreviousPeriod,
   comparePeriods,
   getLastNYears,
   getFutureDate,
