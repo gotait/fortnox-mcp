@@ -205,6 +205,7 @@ npm run build
 | `UPSTASH_REDIS_REST_URL` | Yes* | Upstash Redis URL for token storage |
 | `UPSTASH_REDIS_REST_TOKEN` | Yes* | Upstash Redis token |
 | `PORT` | No | HTTP port (default: 3000) |
+| `TRUST_PROXY` | No | Trusted proxy hop count, or an address/CIDR list. Only set this when a proxy in front of the server overwrites `X-Forwarded-For` — otherwise callers can forge the IP that rate limits are keyed on. Enabled automatically on Vercel. |
 
 *Falls back to in-memory storage if not provided (not recommended for production)
 

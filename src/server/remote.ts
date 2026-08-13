@@ -48,8 +48,16 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
   const app = express();
   app.use(express.json());
 
-  // Trust proxy headers (for Vercel, etc.)
-  app.set("trust proxy", 1);
+  // Trust X-Forwarded-For only where something in front of us overwrites it.
+  // Vercel does; runRemoteServer listening on a bare port does not, and there
+  // the header is whatever the caller sent — so trusting it unconditionally
+  // lets anyone forge the address the rate limiter keys on. Set TRUST_PROXY to
+  // the hop count (or an address/CIDR list) for other deployments.
+  const trustProxy = process.env.TRUST_PROXY || (process.env.VERCEL ? "1" : "");
+  if (trustProxy) {
+    const hops = Number(trustProxy);
+    app.set("trust proxy", Number.isNaN(hops) ? trustProxy : hops);
+  }
 
   // Health check endpoint (no auth required)
   app.get("/health", (_req, res) => {
@@ -60,10 +68,15 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
     });
   });
 
-  // Per-IP limit on the unauthenticated OAuth endpoints
+  // Per-IP burst cap over the unauthenticated OAuth surface. mcpAuthRouter
+  // already limits /authorize, /token, /register and /revoke over 15-minute
+  // and hourly windows; this bounds how fast a caller may spend those budgets,
+  // and is the only limit on the Fortnox callback, which the SDK knows nothing
+  // about. The SDK's own limiters count in-process, so on serverless this is
+  // also the only one of the two that holds across instances.
   app.use(
     ["/authorize", "/token", "/register", "/revoke", "/oauth/fortnox/callback"],
-    rateLimit({ windowMs: 60_000, max: 30 })
+    rateLimit({ name: "oauth", windowMs: 60_000, max: 20, store: stateStore })
   );
 
   app.use(
@@ -129,14 +142,21 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
   // Protected MCP endpoint
   app.post(
     "/mcp",
+    // Per-IP limit, ahead of authentication. requireBearerAuth answers 401
+    // itself without calling next(), so anything mounted behind it never sees
+    // failed-auth requests — which is exactly the traffic worth limiting, and
+    // it costs a JWT verify plus a revocation lookup each time.
+    rateLimit({ name: "mcp-ip", windowMs: 60_000, max: 240, store: stateStore }),
     requireBearerAuth({
       verifier: oauthProvider,
       resourceMetadataUrl: `${serverUrl}/.well-known/oauth-protected-resource`,
     }),
     // Per-user limit; one tenant can't starve the others
     rateLimit({
+      name: "mcp-user",
       windowMs: 60_000,
       max: 120,
+      store: stateStore,
       key: (req) => (req.auth && getUserIdFromAuth(req.auth)) || req.ip || "unknown",
     }),
     async (req: Request, res: Response) => {
