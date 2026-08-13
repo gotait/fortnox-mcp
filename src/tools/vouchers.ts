@@ -7,7 +7,8 @@ import {
   formatMoney,
   formatDisplayDate,
   formatListMarkdown,
-  buildPaginationMeta
+  buildPaginationMeta,
+  sanitizeInline
 } from "../services/formatters.js";
 import { periodToDateRange, getPeriodDescription } from "../services/dateHelpers.js";
 import {
@@ -158,7 +159,7 @@ Examples:
             total,
             params.page,
             params.limit,
-            (v) => `- **${v.VoucherSeries}${v.VoucherNumber}** (${formatDisplayDate(v.TransactionDate)}): ${v.Description}`
+            (v) => `- **${v.VoucherSeries}${v.VoucherNumber}** (${formatDisplayDate(v.TransactionDate)}): ${sanitizeInline(v.Description)}`
           );
         }
 
@@ -230,7 +231,7 @@ Returns:
           const lines = [
             `# Voucher ${voucher.VoucherSeries}${voucher.VoucherNumber}`,
             "",
-            `**Description**: ${voucher.Description}`,
+            `**Description**: ${sanitizeInline(voucher.Description)}`,
             `**Date**: ${formatDisplayDate(voucher.TransactionDate)}`,
             `**Year**: ${voucher.Year}`,
             "",
@@ -247,7 +248,7 @@ Returns:
             totalDebit += row.Debit || 0;
             totalCredit += row.Credit || 0;
             lines.push(
-              `| ${row.Account} | ${row.Description || "-"} | ${formatMoney(row.Debit || 0)} | ${formatMoney(row.Credit || 0)} |`
+              `| ${row.Account} | ${sanitizeInline(row.Description || "-")} | ${formatMoney(row.Debit || 0)} | ${formatMoney(row.Credit || 0)} |`
             );
           }
 
@@ -425,7 +426,7 @@ Returns:
           ];
 
           for (const s of series) {
-            lines.push(`| ${s.Code} | ${s.Description} | ${s.Manual ? "Yes" : "No"} |`);
+            lines.push(`| ${s.Code} | ${sanitizeInline(s.Description)} | ${s.Manual ? "Yes" : "No"} |`);
           }
 
           textContent = lines.join("\n");
@@ -709,7 +710,7 @@ Examples:
 
             for (const t of displayTransactions) {
               lines.push(
-                `| ${formatDisplayDate(t.transaction_date)} | ${t.voucher_series}${t.voucher_number} | ${t.account} | ${t.description || t.voucher_description} | ${formatMoney(t.debit)} | ${formatMoney(t.credit)} |`
+                `| ${formatDisplayDate(t.transaction_date)} | ${t.voucher_series}${t.voucher_number} | ${t.account} | ${sanitizeInline(t.description || t.voucher_description)} | ${formatMoney(t.debit)} | ${formatMoney(t.credit)} |`
               );
             }
 
@@ -955,14 +956,14 @@ Examples:
 
             for (const v of displayVouchers) {
               lines.push(`### ${v.voucher_series}${v.voucher_number} (${formatDisplayDate(v.transaction_date)})`);
-              lines.push(`**Description**: ${v.description}`);
+              lines.push(`**Description**: ${sanitizeInline(v.description)}`);
 
               if (v.rows && v.rows.length > 0) {
                 lines.push("");
                 lines.push("| Account | Description | Debit | Credit |");
                 lines.push("|---------|-------------|-------|--------|");
                 for (const row of v.rows) {
-                  const rowDesc = row.description || "-";
+                  const rowDesc = sanitizeInline(row.description || "-");
                   const highlight = textMatches(row.description || "") ? " **" : "";
                   lines.push(`| ${row.account} | ${highlight}${rowDesc}${highlight} | ${formatMoney(row.debit)} | ${formatMoney(row.credit)} |`);
                 }

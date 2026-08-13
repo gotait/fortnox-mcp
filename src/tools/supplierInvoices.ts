@@ -7,7 +7,9 @@ import {
   formatMoney,
   formatDisplayDate,
   formatListMarkdown,
-  buildPaginationMeta
+  buildPaginationMeta,
+  sanitizeInline,
+  fenceUntrusted
 } from "../services/formatters.js";
 import {
   periodToDateRange,
@@ -264,8 +266,8 @@ Examples:
             for (const inv of invoices) {
               const status = getSupplierInvoiceStatus(inv);
               lines.push(`## Supplier Invoice #${inv.GivenNumber}`);
-              lines.push(`- **Supplier**: ${inv.SupplierName || inv.SupplierNumber}`);
-              lines.push(`- **Invoice Number**: ${inv.InvoiceNumber || "-"}`);
+              lines.push(`- **Supplier**: ${sanitizeInline(inv.SupplierName || inv.SupplierNumber)}`);
+              lines.push(`- **Invoice Number**: ${sanitizeInline(inv.InvoiceNumber || "-")}`);
               lines.push(`- **Date**: ${formatDisplayDate(inv.InvoiceDate)} | **Due**: ${formatDisplayDate(inv.DueDate)}`);
               lines.push(`- **Total**: ${formatMoney(inv.Total, inv.Currency)} | **Balance**: ${formatMoney(inv.Balance, inv.Currency)}`);
               lines.push(`- **Status**: ${status.toUpperCase()}`);
@@ -283,8 +285,8 @@ Examples:
               (inv) => {
                 const status = getSupplierInvoiceStatus(inv);
                 return `## Supplier Invoice #${inv.GivenNumber}\n` +
-                  `- **Supplier**: ${inv.SupplierName || inv.SupplierNumber}\n` +
-                  `- **Invoice Number**: ${inv.InvoiceNumber || "-"}\n` +
+                  `- **Supplier**: ${sanitizeInline(inv.SupplierName || inv.SupplierNumber)}\n` +
+                  `- **Invoice Number**: ${sanitizeInline(inv.InvoiceNumber || "-")}\n` +
                   `- **Date**: ${formatDisplayDate(inv.InvoiceDate)} | **Due**: ${formatDisplayDate(inv.DueDate)}\n` +
                   `- **Total**: ${formatMoney(inv.Total, inv.Currency)} | **Balance**: ${formatMoney(inv.Balance, inv.Currency)}\n` +
                   `- **Status**: ${status.toUpperCase()}`;
@@ -371,10 +373,10 @@ Returns:
             "",
             "## Supplier",
             `- **Number**: ${invoice.SupplierNumber}`,
-            `- **Name**: ${invoice.SupplierName || "-"}`,
+            `- **Name**: ${sanitizeInline(invoice.SupplierName || "-")}`,
             "",
             "## Invoice Details",
-            `- **Invoice Number**: ${invoice.InvoiceNumber || "-"}`,
+            `- **Invoice Number**: ${sanitizeInline(invoice.InvoiceNumber || "-")}`,
             `- **Invoice Date**: ${formatDisplayDate(invoice.InvoiceDate)}`,
             `- **Due Date**: ${formatDisplayDate(invoice.DueDate)}`,
             `- **OCR**: ${invoice.OCR || "-"}`,
@@ -391,13 +393,13 @@ Returns:
             lines.push("|---------|-------------|-------|--------|");
             for (const row of invoice.SupplierInvoiceRows) {
               lines.push(
-                `| ${row.Account || "-"} | ${row.AccountDescription || "-"} | ${formatMoney(row.Debit)} | ${formatMoney(row.Credit)} |`
+                `| ${row.Account || "-"} | ${sanitizeInline(row.AccountDescription || "-")} | ${formatMoney(row.Debit)} | ${formatMoney(row.Credit)} |`
               );
             }
           }
 
           if (invoice.Comments) {
-            lines.push("", "## Comments", invoice.Comments);
+            lines.push("", fenceUntrusted("Comments", invoice.Comments));
           }
 
           textContent = lines.join("\n");
@@ -456,7 +458,7 @@ Returns:
         } else {
           textContent = `# Supplier Invoice Approved\n\n` +
             `Supplier invoice **#${invoice.GivenNumber}** has been approved for payment.\n\n` +
-            `**Supplier**: ${invoice.SupplierName || invoice.SupplierNumber}\n` +
+            `**Supplier**: ${sanitizeInline(invoice.SupplierName || invoice.SupplierNumber)}\n` +
             `**Total**: ${formatMoney(invoice.Total, invoice.Currency)}\n\n` +
             `The invoice is now marked as pending payment.`;
         }
@@ -668,7 +670,7 @@ Examples:
               .slice(0, 20); // Limit to top 20 in markdown
 
             for (const entry of supplierEntries) {
-              lines.push(`| ${entry.supplier} | ${entry.count} | ${formatMoney(entry.balance)} |`);
+              lines.push(`| ${sanitizeInline(entry.supplier)} | ${entry.count} | ${formatMoney(entry.balance)} |`);
             }
 
             if (bySupplier.size > 20) {
@@ -691,7 +693,7 @@ Examples:
               const bucket = getAgeBucket(inv.DueDate);
               lines.push(
                 `| #${inv.GivenNumber} ` +
-                `| ${inv.SupplierName || inv.SupplierNumber} ` +
+                `| ${sanitizeInline(inv.SupplierName || inv.SupplierNumber)} ` +
                 `| ${inv.DueDate || "-"} ` +
                 `| ${formatMoney(inv.Balance)} ` +
                 `| ${bucket} |`
