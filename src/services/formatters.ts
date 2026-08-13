@@ -13,12 +13,10 @@ export function formatMoney(amount: number | undefined, currency = "SEK"): strin
  */
 export function formatDisplayDate(dateStr: string | undefined): string {
   if (!dateStr) return "-";
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("sv-SE");
-  } catch {
-    return dateStr;
-  }
+  // Fortnox dates are YYYY-MM-DD (sometimes with a time suffix). Format the
+  // date part as-is to avoid timezone conversion shifting it by a day.
+  const match = dateStr.match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : dateStr;
 }
 
 /**
