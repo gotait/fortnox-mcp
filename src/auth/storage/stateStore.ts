@@ -11,6 +11,15 @@ export interface IStateStore {
   get<T>(key: string): Promise<T | null>;
   set(key: string, value: unknown, ttlSeconds?: number): Promise<void>;
   delete(key: string): Promise<void>;
+
+  /**
+   * Atomically read a key and remove it, returning what was there.
+   *
+   * One-time secrets (authorization codes, OAuth state) must be claimed this
+   * way. A get followed by a delete leaves a window in which two concurrent
+   * callers both read the value and both conclude it was unused.
+   */
+  take<T>(key: string): Promise<T | null>;
 }
 
 /**
@@ -22,6 +31,18 @@ export class MemoryStateStore implements IStateStore {
   private ops = 0;
 
   async get<T>(key: string): Promise<T | null> {
+    return this.read(key) as T | null;
+  }
+
+  async take<T>(key: string): Promise<T | null> {
+    // No await between the read and the delete, so this runs to completion in
+    // a single tick and no other caller can observe the value in between.
+    const value = this.read(key);
+    this.entries.delete(key);
+    return value as T | null;
+  }
+
+  private read(key: string): unknown | null {
     const entry = this.entries.get(key);
     if (!entry) return null;
 
@@ -30,7 +51,7 @@ export class MemoryStateStore implements IStateStore {
       return null;
     }
 
-    return entry.value as T;
+    return entry.value;
   }
 
   async set(key: string, value: unknown, ttlSeconds?: number): Promise<void> {
@@ -96,6 +117,14 @@ export class UpstashRedisStateStore implements IStateStore {
   async get<T>(key: string): Promise<T | null> {
     const redis = await this.getRedis();
     const value = await redis.get<T>(this.key(key));
+    return value ?? null;
+  }
+
+  async take<T>(key: string): Promise<T | null> {
+    const redis = await this.getRedis();
+    // GETDEL is a single command, so the read and the removal cannot be
+    // interleaved by another instance exchanging the same code
+    const value = await redis.getdel<T>(this.key(key));
     return value ?? null;
   }
 

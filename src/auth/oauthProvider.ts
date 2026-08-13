@@ -142,16 +142,14 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
     code: string,
     state: string
   ): Promise<{ redirectUri: string; code: string; state?: string }> {
-    // Look up pending authorization
-    const pending = await this.stateStore.get<PendingAuthorization>(
+    // Claim the pending authorization; the state is single-use, and taking it
+    // means a replayed callback can't ride the same pending record
+    const pending = await this.stateStore.take<PendingAuthorization>(
       `pending_auth:${state}`
     );
     if (!pending) {
       throw new Error("Invalid or expired OAuth state");
     }
-
-    // Remove from pending so the state is single-use
-    await this.stateStore.delete(`pending_auth:${state}`);
 
     // Exchange Fortnox code for tokens
     // Generate a unique user ID based on client ID and a random component
@@ -206,7 +204,12 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
     _redirectUri?: string,
     _resource?: URL
   ): Promise<OAuthTokens> {
-    const issued = await this.stateStore.get<IssuedCode>(
+    // Claim the code before validating anything about it. Reading it and
+    // deleting it separately would let two concurrent exchanges of the same
+    // code both see it as unused and both receive a token pair, so a leaked
+    // code stays redeemable for as long as its TTL. Taking it also burns the
+    // code on a failed exchange, which is what RFC 6749 s4.1.2 asks for.
+    const issued = await this.stateStore.take<IssuedCode>(
       `auth_code:${authorizationCode}`
     );
     if (!issued) {
@@ -217,9 +220,6 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
     if (issued.clientId !== client.client_id) {
       throw new Error("Client mismatch");
     }
-
-    // Remove used code
-    await this.stateStore.delete(`auth_code:${authorizationCode}`);
 
     // Check if code is expired (5 minutes); the store TTL also enforces this
     if (Date.now() - issued.createdAt > AUTH_CODE_TTL_SECONDS * 1000) {
