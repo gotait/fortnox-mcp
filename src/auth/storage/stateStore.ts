@@ -1,3 +1,10 @@
+import {
+  UpstashRedis,
+  createUpstashRedis,
+  hasPartialUpstashConfig,
+  hasUpstashConfig,
+} from "./upstashClient.js";
+
 /**
  * Generic JSON key-value store with per-key TTL, used for OAuth flow state
  * (pending authorizations, issued codes, revoked tokens, registered clients).
@@ -8,13 +15,6 @@
  * to work across instances.
  */
 export interface IStateStore {
-  /**
-   * Whether this store is visible to every instance. Callers whose guarantee
-   * depends on that — a rate limit is only a rate limit if all instances count
-   * against the same total — check this before relying on the store.
-   */
-  readonly shared: boolean;
-
   get<T>(key: string): Promise<T | null>;
   set(key: string, value: unknown, ttlSeconds?: number): Promise<void>;
   delete(key: string): Promise<void>;
@@ -33,16 +33,6 @@ export interface IStateStore {
    * rather than on a fixed deadline. No-op when the key is already gone.
    */
   touch(key: string, ttlSeconds: number): Promise<void>;
-
-  /**
-   * Atomically increment a counter, starting its TTL on the first increment.
-   * Returns the new count and when the counter expires, which together
-   * describe one fixed window of a rate limit.
-   */
-  increment(
-    key: string,
-    ttlSeconds: number
-  ): Promise<{ count: number; resetAt: number }>;
 }
 
 /**
@@ -77,24 +67,6 @@ export class MemoryStateStore implements IStateStore {
     }
 
     entry.expiresAt = Date.now() + ttlSeconds * 1000;
-  }
-
-  async increment(
-    key: string,
-    ttlSeconds: number
-  ): Promise<{ count: number; resetAt: number }> {
-    const now = Date.now();
-    const entry = this.entries.get(key);
-
-    if (!entry || entry.expiresAt === null || now >= entry.expiresAt) {
-      const expiresAt = now + ttlSeconds * 1000;
-      this.entries.set(key, { value: 1, expiresAt });
-      return { count: 1, resetAt: expiresAt };
-    }
-
-    const count = (typeof entry.value === "number" ? entry.value : 0) + 1;
-    entry.value = count;
-    return { count, resetAt: entry.expiresAt };
   }
 
   private read(key: string): unknown | null {
@@ -136,33 +108,16 @@ export class MemoryStateStore implements IStateStore {
  * UpstashRedisTokenStorage (UPSTASH_REDIS_REST_URL / KV_REST_API_URL).
  */
 export class UpstashRedisStateStore implements IStateStore {
-  readonly shared = true;
-
   private prefix: string;
-  private redis: import("@upstash/redis").Redis | null = null;
+  private redis: UpstashRedis | null = null;
 
   constructor(prefix = "fortnox_state:") {
     this.prefix = prefix;
   }
 
-  private async getRedis() {
+  private async getRedis(): Promise<UpstashRedis> {
     if (!this.redis) {
-      try {
-        const { Redis } = await import("@upstash/redis");
-
-        const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-        const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
-
-        if (!url || !token) {
-          throw new Error("Missing Redis configuration");
-        }
-
-        this.redis = new Redis({ url, token });
-      } catch (error) {
-        throw new Error(
-          "Upstash Redis not available. Install @upstash/redis and configure UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN."
-        );
-      }
+      this.redis = await createUpstashRedis();
     }
     return this.redis;
   }
@@ -190,31 +145,6 @@ export class UpstashRedisStateStore implements IStateStore {
     await redis.expire(this.key(key), ttlSeconds);
   }
 
-  async increment(
-    key: string,
-    ttlSeconds: number
-  ): Promise<{ count: number; resetAt: number }> {
-    const redis = await this.getRedis();
-    const k = this.key(key);
-
-    // One round trip for the count and the window's remaining lifetime
-    const [count, ttlMs] = await redis
-      .multi()
-      .incr(k)
-      .pttl(k)
-      .exec<[number, number]>();
-
-    // A negative PTTL means the counter has no expiry yet: either this is the
-    // first request of the window, or a previous attempt died between the INCR
-    // and the EXPIRE. Either way, start the window now.
-    if (ttlMs < 0) {
-      await redis.expire(k, ttlSeconds);
-      return { count, resetAt: Date.now() + ttlSeconds * 1000 };
-    }
-
-    return { count, resetAt: Date.now() + ttlMs };
-  }
-
   async set(key: string, value: unknown, ttlSeconds?: number): Promise<void> {
     const redis = await this.getRedis();
     if (ttlSeconds) {
@@ -231,8 +161,18 @@ export class UpstashRedisStateStore implements IStateStore {
 }
 
 export function getStateStoreFromEnv(): IStateStore {
-  if (process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL) {
+  if (hasUpstashConfig()) {
     return new UpstashRedisStateStore();
+  }
+
+  // Half-configured is a deployment mistake, not a request to run on in-memory
+  // state: say so at startup rather than silently dropping revocation and
+  // cross-instance flow state
+  if (hasPartialUpstashConfig()) {
+    throw new Error(
+      "Redis is half-configured: set both UPSTASH_REDIS_REST_URL and " +
+      "UPSTASH_REDIS_REST_TOKEN (or the KV_REST_API_* equivalents), or neither."
+    );
   }
 
   console.error(
