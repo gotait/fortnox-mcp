@@ -140,6 +140,7 @@ export function registerOrderTools(server: McpServer): void {
 
         let orders: FortnoxOrderListItem[];
         let total: number;
+        let totalIsExact = true;
         let pagesFetched = 1;
         let truncated = false;
         let truncationReason: string | undefined;
@@ -153,6 +154,7 @@ export function registerOrderTools(server: McpServer): void {
           );
           orders = result.items;
           total = result.total;
+          totalIsExact = result.totalIsExact;
           pagesFetched = result.pagesFetched;
           truncated = result.truncated;
           truncationReason = result.truncationReason;
@@ -168,6 +170,7 @@ export function registerOrderTools(server: McpServer): void {
         const paginationMeta = params.fetch_all
           ? {
               total,
+              total_is_exact: totalIsExact,
               count: orders.length,
               fetched_all: true,
               pages_fetched: pagesFetched,
@@ -207,7 +210,7 @@ export function registerOrderTools(server: McpServer): void {
             const lines: string[] = [
               `# ${title}`,
               "",
-              `Showing ${orders.length} of ${total} total orders`,
+              `Showing ${orders.length} of ${totalIsExact ? total : `at least ${total}`} total orders`,
               `(${pagesFetched} pages fetched)`
             ];
 
@@ -292,6 +295,7 @@ export function registerOrderTools(server: McpServer): void {
 
         let offers: FortnoxOfferListItem[];
         let total: number;
+        let totalIsExact = true;
         let pagesFetched = 1;
         let truncated = false;
         let truncationReason: string | undefined;
@@ -305,6 +309,7 @@ export function registerOrderTools(server: McpServer): void {
           );
           offers = result.items;
           total = result.total;
+          totalIsExact = result.totalIsExact;
           pagesFetched = result.pagesFetched;
           truncated = result.truncated;
           truncationReason = result.truncationReason;
@@ -320,6 +325,7 @@ export function registerOrderTools(server: McpServer): void {
         const paginationMeta = params.fetch_all
           ? {
               total,
+              total_is_exact: totalIsExact,
               count: offers.length,
               fetched_all: true,
               pages_fetched: pagesFetched,
@@ -360,7 +366,7 @@ export function registerOrderTools(server: McpServer): void {
             const lines: string[] = [
               `# ${title}`,
               "",
-              `Showing ${offers.length} of ${total} total offers`,
+              `Showing ${offers.length} of ${totalIsExact ? total : `at least ${total}`} total offers`,
               `(${pagesFetched} pages fetched)`
             ];
 

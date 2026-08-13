@@ -170,6 +170,7 @@ Error Handling:
 
         let invoices: FortnoxInvoiceListItem[];
         let total: number;
+        let totalIsExact = true;
         let pagesFetched = 1;
         let truncated = false;
         let truncationReason: string | undefined;
@@ -184,6 +185,7 @@ Error Handling:
           );
           invoices = result.items;
           total = result.total;
+          totalIsExact = result.totalIsExact;
           pagesFetched = result.pagesFetched;
           truncated = result.truncated;
           truncationReason = result.truncationReason;
@@ -209,6 +211,7 @@ Error Handling:
         const paginationMeta = params.fetch_all
           ? {
               total,
+              total_is_exact: totalIsExact,
               count: invoices.length,
               fetched_all: true,
               pages_fetched: pagesFetched,
@@ -250,7 +253,7 @@ Error Handling:
             const lines: string[] = [
               `# ${title}`,
               "",
-              `Showing ${invoices.length} of ${total} total invoices`,
+              `Showing ${invoices.length} of ${totalIsExact ? total : `at least ${total}`} total invoices`,
               `(${pagesFetched} pages fetched)`
             ];
 

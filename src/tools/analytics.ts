@@ -55,6 +55,8 @@ function calculateStats(invoices: FortnoxInvoiceListItem[]): {
   max: number;
   paid_count: number;
   unpaid_count: number;
+  draft_count: number;
+  cancelled_count: number;
   total_balance: number;
 } {
   if (invoices.length === 0) {
@@ -66,6 +68,8 @@ function calculateStats(invoices: FortnoxInvoiceListItem[]): {
       max: 0,
       paid_count: 0,
       unpaid_count: 0,
+      draft_count: 0,
+      cancelled_count: 0,
       total_balance: 0
     };
   }
@@ -73,8 +77,19 @@ function calculateStats(invoices: FortnoxInvoiceListItem[]): {
   const totals = invoices.map(inv => inv.Total || 0);
   const sum = totals.reduce((a, b) => a + b, 0);
   const balanceSum = invoices.reduce((a, inv) => a + (inv.Balance || 0), 0);
-  const paidCount = invoices.filter(inv => inv.Booked && (inv.Balance || 0) === 0 && !inv.Cancelled).length;
-  const unpaidCount = invoices.filter(inv => (inv.Balance || 0) > 0).length;
+
+  // Bucket on getInvoiceStatus so the counts partition the set exactly - a
+  // draft or cancelled invoice with a zero balance belongs to neither "paid"
+  // nor "unpaid", and leaving it out of both made the counts fail to add up.
+  const statusCounts: Record<InvoiceStatus, number> = {
+    cancelled: 0,
+    draft: 0,
+    paid: 0,
+    unpaid: 0
+  };
+  for (const inv of invoices) {
+    statusCounts[getInvoiceStatus(inv)]++;
+  }
 
   return {
     count: invoices.length,
@@ -82,8 +97,10 @@ function calculateStats(invoices: FortnoxInvoiceListItem[]): {
     average: sum / invoices.length,
     min: Math.min(...totals),
     max: Math.max(...totals),
-    paid_count: paidCount,
-    unpaid_count: unpaidCount,
+    paid_count: statusCounts.paid,
+    unpaid_count: statusCounts.unpaid,
+    draft_count: statusCounts.draft,
+    cancelled_count: statusCounts.cancelled,
     total_balance: balanceSum
   };
 }
@@ -96,10 +113,12 @@ function getMonthKey(dateStr: string | undefined): string {
   return dateStr.substring(0, 7); // YYYY-MM
 }
 
+type InvoiceStatus = "cancelled" | "draft" | "paid" | "unpaid";
+
 /**
  * Get invoice status
  */
-function getInvoiceStatus(inv: FortnoxInvoiceListItem): string {
+function getInvoiceStatus(inv: FortnoxInvoiceListItem): InvoiceStatus {
   if (inv.Cancelled) return "cancelled";
   if (!inv.Booked) return "draft";
   if ((inv.Balance || 0) === 0) return "paid";
@@ -226,6 +245,7 @@ Error Handling:
           period: params.period || null,
           date_range: dateRangeDescription || null,
           api_total: result.total,
+          api_total_is_exact: result.totalIsExact,
           fetched: invoices.length,
           truncated: result.truncated,
           truncation_reason: result.truncationReason,
@@ -279,6 +299,14 @@ Error Handling:
           lines.push(`| Maximum | ${formatMoney(overallStats.max)} |`);
           lines.push(`| Paid Invoices | ${overallStats.paid_count} |`);
           lines.push(`| Unpaid Invoices | ${overallStats.unpaid_count} |`);
+          // Only shown when non-zero; otherwise Paid + Unpaid already accounts
+          // for every invoice in the count above.
+          if (overallStats.draft_count > 0) {
+            lines.push(`| Draft Invoices (unbooked) | ${overallStats.draft_count} |`);
+          }
+          if (overallStats.cancelled_count > 0) {
+            lines.push(`| Cancelled Invoices | ${overallStats.cancelled_count} |`);
+          }
           lines.push(`| Outstanding Balance | ${formatMoney(overallStats.total_balance)} |`);
 
           if (groups && groups.length > 0) {

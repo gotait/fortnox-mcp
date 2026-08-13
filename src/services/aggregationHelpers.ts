@@ -2,7 +2,15 @@
  * Aggregation Helper Utilities for BI Analytics
  *
  * Provides reusable functions for aggregating and analyzing business data.
+ *
+ * Calendar arithmetic lives in dateHelpers - it is imported rather than
+ * reimplemented here so that time buckets and date ranges can never disagree
+ * about which day, week or quarter a date belongs to.
  */
+
+import { getFutureDate, getQuarterNumber, getTodayString, getWeekNumber } from "./dateHelpers.js";
+
+export { getQuarterNumber, getWeekNumber };
 
 /**
  * Basic statistics result
@@ -90,31 +98,17 @@ export function aggregateByDimension<T>(
 }
 
 /**
- * Get ISO week number for a date
- */
-export function getWeekNumber(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-}
-
-/**
- * Get quarter number for a date (1-4)
- */
-export function getQuarterNumber(date: Date): number {
-  return Math.floor(date.getMonth() / 3) + 1;
-}
-
-/**
  * Get time bucket key for a date
+ *
+ * YYYY-MM-DD strings parse as UTC midnight, so every component must be read
+ * with a UTC accessor. Reading them locally puts an invoice dated 2025-01-01
+ * in 2024-Q4/2024-W01 west of UTC while its month bucket stays 2025-01.
  */
 export function getTimeBucketKey(dateStr: string | undefined, bucket: TimeBucket): string {
   if (!dateStr) return "unknown";
 
   const date = new Date(dateStr);
-  const year = date.getFullYear();
+  const year = date.getUTCFullYear();
 
   switch (bucket) {
     case "week": {
@@ -160,15 +154,9 @@ export function countUnique<T>(items: T[], keyExtractor: (item: T) => string): n
  * Get date range for a number of days ahead from today
  */
 export function getFutureDateRange(daysAhead: number): { from_date: string; to_date: string } {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const future = new Date(today);
-  future.setDate(future.getDate() + daysAhead);
-
   return {
-    from_date: formatDateString(today),
-    to_date: formatDateString(future)
+    from_date: getTodayString(),
+    to_date: getFutureDate(daysAhead)
   };
 }
 
@@ -253,18 +241,20 @@ export function generateTimeBucketKeys(
   bucket: "week" | "month"
 ): string[] {
   const keys: string[] = [];
-  const start = new Date(from_date);
   const end = new Date(to_date);
 
-  let current = new Date(start);
+  // Step in UTC: these dates sit at UTC midnight, so advancing them with local
+  // accessors drifts by an hour across a DST change and can skip or repeat a
+  // bucket.
+  const current = new Date(from_date);
 
   while (current <= end) {
     keys.push(getTimeBucketKey(formatDateString(current), bucket));
 
     if (bucket === "week") {
-      current.setDate(current.getDate() + 7);
+      current.setUTCDate(current.getUTCDate() + 7);
     } else {
-      current.setMonth(current.getMonth() + 1);
+      current.setUTCMonth(current.getUTCMonth() + 1);
     }
   }
 

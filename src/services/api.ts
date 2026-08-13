@@ -199,6 +199,12 @@ export interface FetchAllResult<T> {
   items: T[];
   /** Total count from API (may be higher than items.length if truncated) */
   total: number;
+  /**
+   * Whether the API reported the total. When false, `total` falls back to the
+   * number of items fetched, which is only a lower bound if the fetch was
+   * truncated - do not present it as an authoritative count.
+   */
+  totalIsExact: boolean;
   /** Number of pages fetched */
   pagesFetched: number;
   /** Whether results were truncated due to limits */
@@ -248,8 +254,11 @@ export async function fetchAllPages<T, R>(
   const delayMs = config?.delayBetweenPages ?? FETCH_ALL_DELAY_MS;
 
   const allItems: T[] = [];
+  const seenPages = new Set<string>();
   let page = 1;
+  let pagesFetched = 0;
   let total = 0;
+  let totalIsExact = false;
   let hasMore = true;
   let truncated = false;
   let truncationReason: string | undefined;
@@ -276,38 +285,57 @@ export async function fetchAllPages<T, R>(
       page
     });
 
+    pagesFetched++;
+
     const items = extractItems(response);
-    total = extractTotal(response);
+
+    // Keep the last total the API actually reported; a later page that omits
+    // MetaInformation must not reset a known total back to "unknown".
+    const reportedTotal = extractTotal(response);
+    if (reportedTotal > 0) {
+      total = reportedTotal;
+      totalIsExact = true;
+    }
 
     if (items.length === 0) {
       hasMore = false;
-    } else {
-      allItems.push(...items);
+      break;
+    }
 
-      // Check if we've fetched all available items. When the API omits
-      // MetaInformation the extracted total is 0 (unknown); in that case
-      // keep fetching until a page comes back shorter than the page size.
-      const totalKnown = total > 0;
-      const isLastPage = totalKnown
-        ? allItems.length >= total
-        : items.length < pageSize;
-
-      if (isLastPage) {
+    if (!totalIsExact) {
+      // Without a reported total there is no count to stop at, so we probe
+      // until a page comes back empty. Some endpoints (e.g. /3/costcenters,
+      // /3/projects) ignore `page` and answer every request with the same
+      // records, which would otherwise loop until the page/result cap and
+      // report each record dozens of times. Treat a repeated page as the end
+      // and discard it.
+      const fingerprint = JSON.stringify(items);
+      if (seenPages.has(fingerprint)) {
         hasMore = false;
-      } else {
-        page++;
-        // Delay to respect rate limits (except on last page)
-        await delay(delayMs);
+        break;
       }
+      seenPages.add(fingerprint);
+    }
+
+    allItems.push(...items);
+
+    if (totalIsExact && allItems.length >= total) {
+      hasMore = false;
+    } else {
+      page++;
+      // Delay to respect rate limits (except on last page)
+      await delay(delayMs);
     }
   }
 
   return {
     items: allItems,
     // When the API never reported a total, fall back to what we actually
-    // fetched (a lower bound if the fetch was truncated) instead of 0.
-    total: total > 0 ? total : allItems.length,
-    pagesFetched: page,
+    // fetched instead of 0 - flagged via totalIsExact, since a truncated
+    // fetch makes that a lower bound rather than the real total.
+    total: totalIsExact ? total : allItems.length,
+    totalIsExact,
+    pagesFetched,
     truncated,
     truncationReason
   };
