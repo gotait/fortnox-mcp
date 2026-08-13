@@ -257,12 +257,15 @@ export class FortnoxProxyOAuthProvider implements OAuthServerProvider {
   }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
-    // Check if revoked
+    // Verify the signature first. The revocation lookup is a state store
+    // round trip, and this runs on unauthenticated input: checking it before
+    // the signature lets anyone turn a stream of junk bearer strings into a
+    // stream of store reads.
+    const payload = await this.verifyToken(token, "access");
+
     if (await this.isRevoked(token)) {
       throw new Error("Token has been revoked");
     }
-
-    const payload = await this.verifyToken(token, "access");
 
     return {
       token,
