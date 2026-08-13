@@ -34,8 +34,10 @@
 
     // Scopes requested from Fortnox, space- or comma-separated. Must be a
     // subset of what the Fortnox app grants: requesting one it does not have
-    // fails the whole authorization.
-    "FORTNOX_SCOPES": "companyinformation customer invoice supplier bookkeeping"
+    // fails the whole authorization with "unsupported scope". One entry per
+    // endpoint family the tools call - see FORTNOX_SCOPES in
+    // src/auth/credentials.ts for the mapping.
+    "FORTNOX_SCOPES": "bookkeeping companyinformation costcenter customer invoice offer order project supplier supplierinvoice"
   },
 
   // Secrets - never put these in vars, they would be readable in the

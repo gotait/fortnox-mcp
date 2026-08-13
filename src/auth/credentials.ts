@@ -47,12 +47,33 @@ export function hasFortnoxCredentials(): boolean {
 }
 
 /**
- * Fortnox OAuth scopes required by this MCP server
+ * Fortnox OAuth scopes required by this MCP server.
+ *
+ * One entry per endpoint family the tools call - Fortnox rejects the whole
+ * authorization if a requested scope is not granted to the app, and answers
+ * 403 per request if a needed one was never requested:
+ *
+ *   bookkeeping         /3/vouchers, /3/voucherseries, /3/accounts,
+ *                       /3/financialyears
+ *   companyinformation  /3/companyinformation
+ *   costcenter          /3/costcenters
+ *   customer            /3/customers
+ *   invoice             /3/invoices
+ *   offer               /3/offers
+ *   order               /3/orders
+ *   project             /3/projects
+ *   supplier            /3/suppliers
+ *   supplierinvoice     /3/supplierinvoices
  */
 export const FORTNOX_SCOPES = [
+  "bookkeeping",
   "companyinformation",
+  "costcenter",
   "customer",
   "invoice",
+  "offer",
+  "order",
+  "project",
   "supplier",
-  "bookkeeping"
+  "supplierinvoice"
 ];
