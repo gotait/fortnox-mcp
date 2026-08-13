@@ -284,22 +284,29 @@ export async function fetchAllPages<T, R>(
     } else {
       allItems.push(...items);
 
-      // Check if we've fetched all available items
-      if (allItems.length >= total) {
+      // Check if we've fetched all available items. When the API omits
+      // MetaInformation the extracted total is 0 (unknown); in that case
+      // keep fetching until a page comes back shorter than the page size.
+      const totalKnown = total > 0;
+      const isLastPage = totalKnown
+        ? allItems.length >= total
+        : items.length < pageSize;
+
+      if (isLastPage) {
         hasMore = false;
       } else {
         page++;
         // Delay to respect rate limits (except on last page)
-        if (hasMore) {
-          await delay(delayMs);
-        }
+        await delay(delayMs);
       }
     }
   }
 
   return {
     items: allItems,
-    total,
+    // When the API never reported a total, fall back to what we actually
+    // fetched (a lower bound if the fetch was truncated) instead of 0.
+    total: total > 0 ? total : allItems.length,
     pagesFetched: page,
     truncated,
     truncationReason
