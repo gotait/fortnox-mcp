@@ -36,6 +36,7 @@ import { runRemoteServer } from "./server/remote.js";
 import { isReadOnlyMode, applyReadOnlyMode } from "./server/readOnly.js";
 import { serverInfo } from "./server/identity.js";
 import { registerAllTools } from "./server/tools.js";
+import { registerAppResources } from "./apps/index.js";
 
 function createMcpServer(): McpServer {
   // No base URL: both local transports inline the icon rather than serving it.
@@ -48,6 +49,7 @@ function createMcpServer(): McpServer {
   }
 
   registerAllTools(server);
+  registerAppResources(server);
 
   return server;
 }

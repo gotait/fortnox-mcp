@@ -472,6 +472,31 @@ Everything is driven by the environment. Secrets go through
 | `FORTNOX_SCOPES` | var | the ten below | Scopes requested from Fortnox, space- or comma-separated. Must be a subset of what the app grants |
 | `SUPPORT_EMAIL` | var | — | Optional. Shown on the authorization error pages as the address to write to |
 
+### Interactive views (MCP Apps)
+
+Three analytics tools ship an interactive view built on the MCP Apps extension
+(SEP-1865), so a host that supports it renders a chart instead of a markdown
+table:
+
+| Tool | View |
+|------|------|
+| `fortnox_top_customers` | ranked bars, following whichever `metric` was requested |
+| `fortnox_invoice_summary` | grouped totals (call with `group_by` for the breakdown) |
+| `fortnox_unpaid_report` | aging structure and largest receivables per customer |
+
+Each view is a `ui://fortnox/<id>.html` resource whose body is a self-contained
+HTML document — inline CSS, inline JS, no external requests — and the tools
+reference it through `_meta.ui.resourceUri`. Views render only from the
+`structuredContent` the tool already returns and never call out, so no CSP
+widening is needed and the data path is unchanged from the text response. Hosts
+without the extension ignore `_meta.ui` and get the same markdown as before.
+
+Sources live in `src/apps/ui/*.widget.ts`. `npm run build:apps` bundles each one
+into `src/apps/generated/widgets.ts` (generated, gitignored); `npm run build`,
+`cf:dev` and `cf:deploy` all run it first. `npm run typecheck:apps` typechecks the
+view sources, which esbuild does not. Adding a view is one `*.widget.ts` file
+plus one line in `TOOL_WIDGETS` (`src/apps/index.ts`).
+
 ### Access level is chosen per user, not configured
 
 The Worker has no read-only setting. Instead the authorization flow asks each

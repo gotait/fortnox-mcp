@@ -25,6 +25,7 @@ import { runWithContext } from "../auth/context.js";
 import { applyReadOnlyMode } from "../server/readOnly.js";
 import { serverInfo } from "../server/identity.js";
 import { registerAllTools } from "../server/tools.js";
+import { registerAppResources } from "../apps/index.js";
 // Only handlers may be named exports of a Worker entry module - the runtime
 // treats every export as a service and rejects anything else - so constants
 // from this module stay imported rather than re-exported.
@@ -74,6 +75,7 @@ function buildServer(baseUrl: string, readOnly: boolean): McpServer {
   }
 
   registerAllTools(server);
+  registerAppResources(server);
   return server;
 }
 

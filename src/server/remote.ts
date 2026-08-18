@@ -14,6 +14,7 @@ import { isReadOnlyMode, applyReadOnlyMode } from "./readOnly.js";
 import { ICON_MIME_TYPE, ICON_PATH, iconPngBytes } from "./icon.js";
 import { serverInfo } from "./identity.js";
 import { registerAllTools } from "./tools.js";
+import { registerAppResources } from "../apps/index.js";
 import { ITokenStorage } from "../auth/storage/types.js";
 
 export interface RemoteServerOptions {
@@ -121,6 +122,7 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
     }
 
     registerAllTools(server);
+    registerAppResources(server);
     return server;
   }
 

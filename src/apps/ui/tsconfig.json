@@ -1,0 +1,19 @@
+{
+  // Typecheck-only pass over the widget sources. These run in the host's
+  // sandboxed iframe, so they need the DOM lib that the server build omits;
+  // esbuild (scripts/build-apps.mjs) does the bundling and does not typecheck.
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM"],
+    "types": [],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "rootDir": "."
+  },
+  "include": ["./**/*.ts"],
+  "exclude": []
+}

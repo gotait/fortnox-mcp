@@ -18,5 +18,9 @@
   "include": ["src/**/*"],
   // src/worker is Workers-only (cloudflare:workers, KVNamespace) and is built
   // by wrangler, not tsc. Typecheck it with tsconfig.worker.json.
-  "exclude": ["node_modules", "dist", "src/worker"]
+  //
+  // src/apps/ui is browser code bundled by scripts/build-apps.mjs and needs the
+  // DOM lib, which the server build deliberately does not have. Typecheck it
+  // with src/apps/ui/tsconfig.json (npm run typecheck:apps).
+  "exclude": ["node_modules", "dist", "src/worker", "src/apps/ui"]
 }

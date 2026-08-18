@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { fetchAllPages } from "../services/api.js";
 import { ResponseFormat } from "../constants.js";
+import { uiMeta } from "../apps/index.js";
 import {
   buildToolResponse,
   buildErrorResponse,
@@ -174,6 +175,7 @@ Error Handling:
   - Returns "Error: ..." if API call fails`,
       inputSchema: InvoiceSummarySchema,
       outputSchema: InvoiceSummaryOutputSchema,
+      _meta: uiMeta("fortnox_invoice_summary"),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -378,6 +380,7 @@ Error Handling:
   - Returns "Error: ..." if API call fails`,
       inputSchema: TopCustomersSchema,
       outputSchema: TopCustomersOutputSchema,
+      _meta: uiMeta("fortnox_top_customers"),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -590,6 +593,7 @@ Error Handling:
   - Returns "Error: ..." if API call fails`,
       inputSchema: UnpaidReportSchema,
       outputSchema: UnpaidReportOutputSchema,
+      _meta: uiMeta("fortnox_unpaid_report"),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,

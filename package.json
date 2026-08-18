@@ -14,16 +14,18 @@
   "scripts": {
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "typecheck:worker": "tsc -p tsconfig.worker.json",
-    "cf:dev": "wrangler dev",
-    "cf:deploy": "wrangler deploy",
+    "build": "npm run build:apps && tsc",
+    "typecheck:worker": "npm run build:apps && tsc -p tsconfig.worker.json",
+    "cf:dev": "npm run build:apps && wrangler dev",
+    "cf:deploy": "npm run build:apps && wrangler deploy",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build",
     "release": "./scripts/release.sh",
     "release:patch": "./scripts/release.sh patch",
     "release:minor": "./scripts/release.sh minor",
-    "release:major": "./scripts/release.sh major"
+    "release:major": "./scripts/release.sh major",
+    "build:apps": "node scripts/build-apps.mjs",
+    "typecheck:apps": "tsc -p src/apps/ui/tsconfig.json"
   },
   "engines": {
     "node": ">=18"
@@ -47,9 +49,11 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260813.1",
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.0",
     "@vercel/node": "^5.5.27",
+    "esbuild": "^0.28.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "wrangler": "^4.122.0"

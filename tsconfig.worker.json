@@ -14,5 +14,6 @@
     "sourceMap": false
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  // src/apps/ui is browser code — see the note in tsconfig.json
+  "exclude": ["node_modules", "dist", "src/apps/ui"]
 }
