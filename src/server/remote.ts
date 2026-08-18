@@ -91,16 +91,30 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
     }
   });
 
-  const mcpServer = new McpServer({
-    name: "fortnox-mcp-server",
-    version: "1.0.0",
-  });
+  /**
+   * A fresh server per request.
+   *
+   * The SDK's Protocol.connect() throws "Already connected to a transport"
+   * while a transport is still attached, and closing that transport aborts
+   * every in-flight request handler on the server. Sharing one McpServer
+   * across requests therefore fails the second concurrent request outright
+   * and takes the first one down with it. The deployment is stateless, so
+   * building the pair per request costs only tool registration.
+   */
+  function buildServer(): McpServer {
+    const server = new McpServer({
+      name: "fortnox-mcp-server",
+      version: "1.0.0",
+    });
 
-  if (isReadOnlyMode()) {
-    applyReadOnlyMode(mcpServer);
+    // Must run before registration so the filter covers every tool.
+    if (isReadOnlyMode()) {
+      applyReadOnlyMode(server);
+    }
+
+    registerAllTools(server);
+    return server;
   }
-
-  registerAllTools(mcpServer);
 
   // Protected MCP endpoint
   app.post(
@@ -118,20 +132,33 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
           return;
         }
 
+        const mcpServer = buildServer();
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableJsonResponse: true,
         });
 
-        res.on("close", () => transport.close());
-
-        await runWithContext({ userId }, async () => {
-          await mcpServer.connect(transport);
-          await transport.handleRequest(req, res, req.body);
+        // Covers a client that disconnects mid-handling; the finally below
+        // handles the normal path. close() is idempotent.
+        res.on("close", () => {
+          void transport.close().catch(() => {});
         });
+
+        await mcpServer.connect(transport);
+
+        try {
+          await runWithContext({ userId }, () =>
+            transport.handleRequest(req, res, req.body)
+          );
+        } finally {
+          // Release this request's pair instead of leaving it attached.
+          await transport.close().catch(() => {});
+        }
       } catch (error) {
         console.error("[MCP] Request error:", error);
-        res.status(500).json({ error: "Internal server error" });
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Internal server error" });
+        }
       }
     }
   );

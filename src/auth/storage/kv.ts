@@ -27,13 +27,23 @@ export interface KVNamespaceLike {
  *
  * KV is eventually consistent across regions: a write is immediately readable
  * in the location that made it, but may take up to a minute elsewhere. That is
- * tolerable here because the value is refreshed well before it expires
- * (TOKEN_REFRESH_BUFFER_MS) and because DatabaseTokenProvider only deletes a
- * record after confirming the stored refresh token is the one Fortnox
- * rejected - a stale read makes it skip the delete rather than destroy a
- * working credential.
+ * tolerable for reads because the value is refreshed well before it expires
+ * (TOKEN_REFRESH_BUFFER_MS).
+ *
+ * It is not tolerable for deletes. Fortnox rotates the refresh token on every
+ * use, and refreshes are deduplicated only within one isolate, so an isolate
+ * holding a superseded token gets 400 invalid_grant. Re-reading the record
+ * cannot tell that case apart from a genuine revocation here: the stale read
+ * returns the old record, matching the rejected token, so the guard would pass
+ * and delete the credential another isolate had just written. Hence
+ * readsAreImmediatelyConsistent is false and the provider keeps the record - a
+ * truly revoked token then surfaces as a refresh failure until the user
+ * re-authorizes, which overwrites it.
  */
 export class KVTokenStorage implements ITokenStorage {
+  /** KV reads may lag a write by up to ~60s outside the writing location. */
+  readonly readsAreImmediatelyConsistent = false;
+
   constructor(
     private readonly kv: KVNamespaceLike,
     private readonly prefix = "fortnox_tokens:"

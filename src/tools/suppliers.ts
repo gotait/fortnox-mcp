@@ -81,15 +81,16 @@ export function registerSupplierTools(server: McpServer): void {
 
 Retrieves a paginated list of suppliers with optional filtering.
 
-Note: The Fortnox API does not support filtering suppliers server-side, so
-filter and search_name are applied client-side. When either is provided, all
-suppliers are fetched (subject to safety limits) and filtered before paginating.
+Note: Fortnox searches supplier names server-side (partial, case-insensitive),
+but documents no active/inactive filter for suppliers - unlike customers. When
+filter is provided, all matching suppliers are fetched (subject to safety
+limits) and filtered on the Active field before paginating.
 
 Args:
   - limit (number): Max results per page, 1-100 (default: 20)
   - page (number): Page number for pagination (default: 1)
   - filter ('active' | 'inactive'): Filter by supplier status (client-side)
-  - search_name (string): Search suppliers by name, case-insensitive partial match (client-side)
+  - search_name (string): Search suppliers by name, case-insensitive partial match (server-side)
   - response_format ('markdown' | 'json'): Output format
 
 Returns:
@@ -108,34 +109,50 @@ Returns:
         let total: number;
         let truncated = false;
         let truncationReason: string | undefined;
+        let filterWarning: string | undefined;
 
-        if (params.filter || params.search_name) {
-          // The Fortnox API does not support these filters server-side, so
-          // fetch all suppliers and filter client-side before paginating.
+        // Name is a searchable field on /3/suppliers, so the search runs on
+        // Fortnox's side (LIKE %value%) rather than costing a full fetch.
+        const searchParams: Record<string, string | number | boolean | undefined> =
+          params.search_name ? { name: params.search_name } : {};
+
+        if (params.filter) {
+          // Suppliers have no documented active/inactive filter, so this one
+          // really does need every matching record fetched first.
           const result = await fetchAllPages<FortnoxSupplierListItem, SupplierListResponse>(
             "/3/suppliers",
-            {},
+            searchParams,
             (r) => r.Suppliers || [],
             (r) => r.MetaInformation?.["@TotalResources"] || 0
           );
           truncated = result.truncated;
           truncationReason = result.truncationReason;
 
-          let filtered = result.items;
-          if (params.filter) {
-            const wantActive = params.filter === "active";
-            filtered = filtered.filter((s) => (s.Active ?? true) === wantActive);
-          }
-          if (params.search_name) {
-            const needle = params.search_name.toLowerCase();
-            filtered = filtered.filter((s) => s.Name.toLowerCase().includes(needle));
-          }
+          // Active is absent from the list payload on older Fortnox versions,
+          // where it appears only on a single-supplier response. Defaulting the
+          // missing value would make filter="inactive" return nothing and
+          // filter="active" return everything, both silently - so say so
+          // instead of filtering on a field that isn't there.
+          const hasActiveField = result.items.some((s) => s.Active !== undefined);
 
-          total = filtered.length;
-          const startIndex = (params.page - 1) * params.limit;
-          suppliers = filtered.slice(startIndex, startIndex + params.limit);
+          if (result.items.length > 0 && !hasActiveField) {
+            filterWarning =
+              `Fortnox did not return the Active field for suppliers, so filter="${params.filter}" ` +
+              `could not be applied. Use fortnox_get_supplier to check a specific supplier's status.`;
+            total = result.items.length;
+            const startIndex = (params.page - 1) * params.limit;
+            suppliers = result.items.slice(startIndex, startIndex + params.limit);
+          } else {
+            const wantActive = params.filter === "active";
+            const filtered = result.items.filter((s) => (s.Active ?? true) === wantActive);
+
+            total = filtered.length;
+            const startIndex = (params.page - 1) * params.limit;
+            suppliers = filtered.slice(startIndex, startIndex + params.limit);
+          }
         } else {
           const response = await fortnoxRequest<SupplierListResponse>("/3/suppliers", "GET", undefined, {
+            ...searchParams,
             limit: params.limit,
             page: params.page
           });
@@ -146,6 +163,7 @@ Returns:
         const output = {
           ...buildPaginationMeta(total, params.page, params.limit, suppliers.length),
           ...(truncated ? { truncated, truncation_reason: truncationReason } : {}),
+          ...(filterWarning ? { filter_warning: filterWarning } : {}),
           suppliers: suppliers.map((s) => ({
             supplier_number: s.SupplierNumber,
             name: s.Name,
@@ -170,6 +188,10 @@ Returns:
               (s.City ? `- **City**: ${sanitizeInline(s.City)}\n` : "") +
               (s.OrganisationNumber ? `- **Org.nr**: ${sanitizeInline(s.OrganisationNumber)}` : "")
           );
+
+          if (filterWarning) {
+            textContent = `⚠️ ${filterWarning}\n\n${textContent}`;
+          }
         }
 
         return buildToolResponse(textContent, output);

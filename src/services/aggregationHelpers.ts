@@ -248,6 +248,15 @@ export function generateTimeBucketKeys(
   // bucket.
   const current = new Date(from_date);
 
+  // Monthly stepping walks the 1st of each month, not the start date's day of
+  // month. setUTCMonth keeps the day, so stepping from e.g. the 31st overflows
+  // short months (Aug 31 -> "Sep 31" -> Oct 1) and drops a bucket key
+  // entirely - the invoices grouped under that key would then never be read
+  // back out of the buckets.
+  if (bucket === "month") {
+    current.setUTCDate(1);
+  }
+
   while (current <= end) {
     keys.push(getTimeBucketKey(formatDateString(current), bucket));
 

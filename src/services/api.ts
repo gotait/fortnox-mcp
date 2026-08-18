@@ -330,20 +330,32 @@ export async function fetchAllPages<T, R>(
       break;
     }
 
-    if (!totalIsExact) {
-      // Without a reported total there is no count to stop at, so we probe
-      // until a page comes back empty. Some endpoints (e.g. /3/costcenters,
-      // /3/projects) ignore `page` and answer every request with the same
-      // records, which would otherwise loop until the page/result cap and
-      // report each record dozens of times. Treat a repeated page as the end
-      // and discard it.
-      const fingerprint = JSON.stringify(items);
-      if (seenPages.has(fingerprint)) {
-        hasMore = false;
-        break;
+    // Some endpoints (e.g. /3/costcenters, /3/projects) ignore `page` and answer
+    // every request with the same records, which would otherwise loop until the
+    // page/result cap and report each record dozens of times. Treat a repeated
+    // page as the end and discard it. Checked regardless of totalIsExact: an
+    // endpoint that ignores `page` but does report a total larger than one page
+    // would otherwise duplicate its records until allItems reached that total.
+    const fingerprint = JSON.stringify(items);
+    if (seenPages.has(fingerprint)) {
+      hasMore = false;
+
+      // What we hold is one page and nothing more is reachable. That is the
+      // whole set only if the page was not full, or if the reported total says
+      // so - otherwise records exist that pagination cannot reach, and calling
+      // the result complete is what presents 100 of 250 cost centers as "all of
+      // them".
+      const gotEverything =
+        allItems.length < pageSize || (totalIsExact && allItems.length >= total);
+      if (!gotEverything) {
+        truncated = true;
+        truncationReason =
+          `${endpoint} returned the same records again for page ${page}, so it does not ` +
+          `support pagination. Only the first ${allItems.length} records could be retrieved.`;
       }
-      seenPages.add(fingerprint);
+      break;
     }
+    seenPages.add(fingerprint);
 
     allItems.push(...items);
 

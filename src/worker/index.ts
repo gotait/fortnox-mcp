@@ -24,13 +24,13 @@ import { initializeTokenProvider } from "../auth/registry.js";
 import { runWithContext } from "../auth/context.js";
 import { applyReadOnlyMode } from "../server/readOnly.js";
 import { registerAllTools } from "../server/tools.js";
-import { FORTNOX_SCOPES } from "../auth/credentials.js";
 // Only handlers may be named exports of a Worker entry module - the runtime
 // treats every export as a service and rejects anything else - so constants
 // from this module stay imported rather than re-exported.
 import { fortnoxAuthHandler } from "./fortnoxAuthHandler.js";
 import {
   getConfiguredCredentials,
+  getRequestedScopes,
   isReadOnly,
   type Env,
   type FortnoxProps,
@@ -130,14 +130,36 @@ export class FortnoxMcpHandler extends WorkerEntrypoint<Env, FortnoxProps> {
   }
 }
 
-export default new OAuthProvider<Env>({
-  apiRoute: "/mcp",
-  apiHandler: FortnoxMcpHandler,
-  defaultHandler: fortnoxAuthHandler,
+/**
+ * Cached per isolate for the same reason as the token provider: bindings are
+ * stable for an isolate's lifetime.
+ *
+ * Built lazily rather than at module scope because the advertised scopes have to
+ * match what authorization actually requests, and that depends on env - a
+ * deployment that narrows FORTNOX_SCOPES must not keep advertising the full set
+ * in its discovery document.
+ */
+let cachedOAuthProvider: OAuthProvider<Env> | null = null;
 
-  authorizeEndpoint: "/authorize",
-  tokenEndpoint: "/token",
-  clientRegistrationEndpoint: "/register",
+function oauthProviderFor(env: Env): OAuthProvider<Env> {
+  if (!cachedOAuthProvider) {
+    cachedOAuthProvider = new OAuthProvider<Env>({
+      apiRoute: "/mcp",
+      apiHandler: FortnoxMcpHandler,
+      defaultHandler: fortnoxAuthHandler,
 
-  scopesSupported: FORTNOX_SCOPES,
-});
+      authorizeEndpoint: "/authorize",
+      tokenEndpoint: "/token",
+      clientRegistrationEndpoint: "/register",
+
+      scopesSupported: getRequestedScopes(env),
+    });
+  }
+  return cachedOAuthProvider;
+}
+
+export default {
+  fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    return oauthProviderFor(env).fetch(request, env, ctx);
+  },
+};
