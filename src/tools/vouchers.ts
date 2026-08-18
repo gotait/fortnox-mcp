@@ -17,6 +17,8 @@ import {
   CreateVoucherSchema,
   ListVoucherSeriesSchema,
   AccountActivitySchema,
+  ACCOUNT_FILTER_REQUIRED_MESSAGE,
+  hasAccountFilter,
   SearchVouchersSchema,
   type ListVouchersInput,
   type GetVoucherInput,
@@ -471,7 +473,7 @@ matched here: the date range narrows the voucher list server-side, then details
 are fetched for up to max_vouchers of those vouchers and matched against the
 account criteria. Use date ranges to limit the scan.
 
-Args:
+Args (one of account_number, account_numbers or account_range is required):
   - account_number (number): Single account number to filter by (1000-9999)
   - account_numbers (array): Multiple account numbers to filter by (max 20)
   - account_range (object): Account range { from: 3000, to: 3999 }
@@ -502,6 +504,11 @@ Examples:
     },
     async (params: AccountActivityInput) => {
       try {
+        // Enforced here rather than in the schema: see hasAccountFilter.
+        if (!hasAccountFilter(params)) {
+          return buildErrorResponse(new Error(ACCOUNT_FILTER_REQUIRED_MESSAGE));
+        }
+
         // Build account filter set
         const accountFilter = new Set<number>();
         if (params.account_number !== undefined) {

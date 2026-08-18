@@ -194,12 +194,30 @@ export const AccountActivitySchema = z.object({
   response_format: z.nativeEnum(ResponseFormat)
     .default(ResponseFormat.MARKDOWN)
     .describe("Output format: 'markdown' or 'json'")
-}).strict().refine(
-  (data) => data.account_number !== undefined || data.account_numbers !== undefined || data.account_range !== undefined,
-  { message: "Must specify at least one of: account_number, account_numbers, or account_range" }
-);
+}).strict();
 
 export type AccountActivityInput = z.infer<typeof AccountActivitySchema>;
+
+/**
+ * "At least one account filter" is enforced by the tool rather than by a
+ * `.refine()` on the schema above.
+ *
+ * A trailing `.refine()` turns a ZodObject into a ZodEffects, and the MCP SDK
+ * can only read a field shape off the former: with the refine in place, this
+ * tool published `{"type":"object","properties":{}}` and every parameter was
+ * invisible to clients. Nested refinements are fine - only the top-level schema
+ * of a tool has to stay an object.
+ */
+export const ACCOUNT_FILTER_REQUIRED_MESSAGE =
+  "Must specify at least one of: account_number, account_numbers, or account_range";
+
+export function hasAccountFilter(input: AccountActivityInput): boolean {
+  return (
+    input.account_number !== undefined ||
+    input.account_numbers !== undefined ||
+    input.account_range !== undefined
+  );
+}
 
 /**
  * Schema for voucher text search tool
