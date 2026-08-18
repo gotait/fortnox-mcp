@@ -15,6 +15,14 @@ import {
   CreateSupplierSchema,
   UpdateSupplierSchema,
   DeactivateSupplierSchema,
+  ListSuppliersOutputSchema,
+  GetSupplierOutputSchema,
+  MutateSupplierOutputSchema,
+  DeactivateSupplierOutputSchema,
+  type ListSuppliersOutput,
+  type GetSupplierOutput,
+  type MutateSupplierOutput,
+  type DeactivateSupplierOutput,
   type ListSuppliersInput,
   type GetSupplierInput,
   type CreateSupplierInput,
@@ -96,6 +104,7 @@ Args:
 Returns:
   List of suppliers with supplier number, name, email, city, and organisation number.`,
       inputSchema: ListSuppliersSchema,
+      outputSchema: ListSuppliersOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -160,7 +169,7 @@ Returns:
           total = response.MetaInformation?.["@TotalResources"] || suppliers.length;
         }
 
-        const output = {
+        const output: ListSuppliersOutput = {
           ...buildPaginationMeta(total, params.page, params.limit, suppliers.length),
           ...(truncated ? { truncated, truncation_reason: truncationReason } : {}),
           ...(filterWarning ? { filter_warning: filterWarning } : {}),
@@ -215,6 +224,7 @@ Args:
 Returns:
   Complete supplier details including contact info, addresses, bank details, and payment terms.`,
       inputSchema: GetSupplierSchema,
+      outputSchema: GetSupplierOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -229,7 +239,7 @@ Returns:
         );
         const supplier = response.Supplier;
 
-        const output = {
+        const output: GetSupplierOutput = {
           supplier_number: supplier.SupplierNumber,
           name: supplier.Name,
           email: supplier.Email || null,
@@ -307,6 +317,7 @@ Args:
 Returns:
   The created supplier with assigned supplier number.`,
       inputSchema: CreateSupplierSchema,
+      outputSchema: MutateSupplierOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -345,7 +356,7 @@ Returns:
         );
         const supplier = response.Supplier;
 
-        const output = {
+        const output: MutateSupplierOutput = {
           success: true,
           message: `Supplier "${supplier.Name}" created successfully`,
           supplier_number: supplier.SupplierNumber,
@@ -385,6 +396,7 @@ Args:
 Returns:
   The updated supplier details.`,
       inputSchema: UpdateSupplierSchema,
+      outputSchema: MutateSupplierOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -422,7 +434,7 @@ Returns:
         );
         const supplier = response.Supplier;
 
-        const output = {
+        const output: MutateSupplierOutput = {
           success: true,
           message: `Supplier "${supplier.Name}" updated successfully`,
           supplier_number: supplier.SupplierNumber,
@@ -463,6 +475,7 @@ Args:
 Returns:
   Confirmation of deactivation.`,
       inputSchema: DeactivateSupplierSchema,
+      outputSchema: DeactivateSupplierOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -478,7 +491,7 @@ Returns:
           { Supplier: { Active: false } }
         );
 
-        const output = {
+        const output: DeactivateSupplierOutput = {
           success: true,
           message: `Supplier ${params.supplier_number} deactivated successfully`
         };

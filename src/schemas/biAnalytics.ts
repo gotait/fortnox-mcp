@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { periodFields, truncationFields } from "./common.js";
 import { ResponseFormat } from "../constants.js";
 import { DatePeriodEnum } from "./invoices.js";
 
@@ -271,3 +272,177 @@ export const GrossMarginTrendSchema = z.object({
 }).strict();
 
 export type GrossMarginTrendInput = z.infer<typeof GrossMarginTrendSchema>;
+
+/* ---- output schemas (see src/schemas/common.ts for the rules) ----
+ *
+ * Sub-objects assembled by the aggregation helpers (period buckets, group
+ * statistics, per-year rows) are declared z.unknown() rather than guessed at.
+ * That keeps the advertised contract truthful — the top-level keys are the part
+ * we actually guarantee — and it lets tsc still check the key set of every
+ * literal, which is what catches a handler and its schema drifting apart.
+ */
+
+/** Assembled by an aggregation helper; shape intentionally not asserted. */
+const helperBuilt = () => z.unknown();
+
+export const CashFlowForecastOutputSchema = z.object({
+  forecast: z.object({
+    horizon_days: z.number(),
+    group_by: z.string(),
+    from_date: z.string(),
+    to_date: z.string(),
+    include_overdue: z.boolean(),
+    starting_balance: z.number()
+  }),
+  summary: z.object({
+    total_receivables: z.number(),
+    total_payables: z.number(),
+    net_position: z.number(),
+    receivables_count: z.number(),
+    payables_count: z.number(),
+    ending_balance: z.number()
+  }),
+  periods: helperBuilt(),
+  ...truncationFields,
+  warning: z.string().optional().describe("Set when supplier invoices were unavailable")
+});
+
+export const OrderPipelineOutputSchema = z.object({
+  ...periodFields,
+  group_by: z.string(),
+  summary: z.object({
+    total_orders: z.number(),
+    total_value: z.number(),
+    pending_orders: z.number(),
+    pending_value: z.number(),
+    invoiced_orders: z.number(),
+    invoiced_value: z.number(),
+    cancelled_orders: z.number(),
+    unique_customers: z.number()
+  }),
+  groups: helperBuilt(),
+  ...truncationFields
+});
+
+export const SalesFunnelOutputSchema = z.object({
+  ...periodFields,
+  funnel: z.object({
+    offers: z.object({ count: z.number(), value: z.number(), converted: z.number(), open: z.number() }),
+    orders: z.object({ count: z.number(), value: z.number(), converted: z.number(), open: z.number() }),
+    invoices: z.object({ count: z.number(), value: z.number() })
+  }),
+  conversion_rates: z.object({
+    offer_to_order: z.number(),
+    order_to_invoice: z.number(),
+    overall: z.number().describe("Product of the two stage rates")
+  }),
+  truncated: z.boolean()
+});
+
+export const ProductPerformanceOutputSchema = z.object({
+  ...periodFields,
+  metric: z.string(),
+  summary: z.object({
+    total_revenue: z.number(),
+    total_invoices: z.number(),
+    unique_customers: z.number()
+  }),
+  top_performers: z.array(z.object({
+    rank: z.number(),
+    identifier: z.string(),
+    name: z.string(),
+    revenue: z.number(),
+    invoice_count: z.number()
+  })),
+  note: z.string(),
+  truncated: z.boolean()
+});
+
+export const PeriodComparisonOutputSchema = z.object({
+  current_period: z.object({
+    // the derived previous period has no name when the current one was a
+    // custom date range, so both sides are nullable
+    period: z.string().nullable(),
+    description: z.string(),
+    date_range: helperBuilt(),
+    metrics: helperBuilt()
+  }),
+  previous_period: z.object({
+    period: z.string().nullable(),
+    description: z.string(),
+    date_range: helperBuilt(),
+    metrics: helperBuilt()
+  }),
+  comparison: helperBuilt(),
+  truncated: z.boolean()
+});
+
+export const CustomerGrowthOutputSchema = z.object({
+  current_period: helperBuilt(),
+  previous_period: helperBuilt(),
+  filter: z.string(),
+  summary: z.object({
+    total_customers_analyzed: z.number(),
+    growing_customers: z.number(),
+    declining_customers: z.number(),
+    flat_customers: z.number()
+  }),
+  customers: helperBuilt(),
+  truncated: z.boolean()
+});
+
+/** Two shapes: a not-found early return, and the full report. */
+export const ProjectProfitabilityOutputSchema = z.object({
+  message: z.string().optional().describe("Set when no matching project was found"),
+  note: z.string().optional(),
+  projects: helperBuilt(),
+  truncated: z.boolean().optional()
+});
+
+export const CostCenterAnalysisOutputSchema = z.object({
+  note: z.string(),
+  cost_centers: helperBuilt(),
+  truncated: z.boolean()
+});
+
+export const ExpenseAnalysisOutputSchema = z.object({
+  ...periodFields,
+  account_range: z.object({ from: z.number(), to: z.number() }),
+  group_by: z.string(),
+  note: z.string(),
+  expense_classes: helperBuilt()
+});
+
+export const YearlyComparisonOutputSchema = z.object({
+  years_compared: helperBuilt(),
+  metrics: helperBuilt(),
+  note: z.string().nullish(),
+  years: helperBuilt(),
+  truncated: z.boolean()
+});
+
+export const GrossMarginTrendOutputSchema = z.object({
+  ...periodFields,
+  group_by: z.string(),
+  account_ranges: z.object({ revenue: helperBuilt(), cogs: helperBuilt() }),
+  note: z.string(),
+  periods: z.array(z.object({
+    period: z.string(),
+    revenue: z.number(),
+    cogs: z.number(),
+    gross_margin: z.number(),
+    margin_percent: z.number()
+  }))
+});
+
+export type CashFlowForecastOutput = z.infer<typeof CashFlowForecastOutputSchema>;
+export type OrderPipelineOutput = z.infer<typeof OrderPipelineOutputSchema>;
+export type SalesFunnelOutput = z.infer<typeof SalesFunnelOutputSchema>;
+export type ProductPerformanceOutput = z.infer<typeof ProductPerformanceOutputSchema>;
+export type PeriodComparisonOutput = z.infer<typeof PeriodComparisonOutputSchema>;
+export type CustomerGrowthOutput = z.infer<typeof CustomerGrowthOutputSchema>;
+export type ProjectProfitabilityOutput = z.infer<typeof ProjectProfitabilityOutputSchema>;
+export type CostCenterAnalysisOutput = z.infer<typeof CostCenterAnalysisOutputSchema>;
+export type ExpenseAnalysisOutput = z.infer<typeof ExpenseAnalysisOutputSchema>;
+export type YearlyComparisonOutput = z.infer<typeof YearlyComparisonOutputSchema>;
+export type GrossMarginTrendOutput = z.infer<typeof GrossMarginTrendOutputSchema>;

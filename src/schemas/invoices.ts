@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { listMetaFields, writeResultFields } from "./common.js";
 import { ResponseFormat, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../constants.js";
 
 /**
@@ -286,3 +287,104 @@ export const SendInvoiceEmailSchema = z.object({
 }).strict();
 
 export type SendInvoiceEmailInput = z.infer<typeof SendInvoiceEmailSchema>;
+
+/* ---- output schemas (see src/schemas/common.ts for the rules) ---- */
+
+export const ListInvoicesOutputSchema = z.object({
+  ...listMetaFields,
+  period_description: z.string().optional(),
+  invoices: z.array(z.object({
+    document_number: z.string(),
+    customer_number: z.string(),
+    customer_name: z.string().nullable(),
+    invoice_date: z.string().nullable(),
+    due_date: z.string().nullable(),
+    total: z.number(),
+    balance: z.number(),
+    currency: z.string(),
+    booked: z.boolean(),
+    cancelled: z.boolean()
+  }))
+});
+
+export const GetInvoiceOutputSchema = z.object({
+  document_number: z.string(),
+  customer_number: z.string(),
+  customer_name: z.string().nullable(),
+  invoice_date: z.string().nullable(),
+  due_date: z.string().nullable(),
+  total: z.number(),
+  balance: z.number(),
+  currency: z.string(),
+  ocr: z.string().nullable(),
+  our_reference: z.string().nullable(),
+  your_reference: z.string().nullable(),
+  booked: z.boolean(),
+  cancelled: z.boolean(),
+  sent: z.boolean(),
+  comments: z.string().nullable(),
+  remarks: z.string().nullable(),
+  rows: z.array(z.object({
+    article_number: z.string().nullable(),
+    description: z.string().nullable(),
+    quantity: z.number(),
+    unit: z.string().nullable(),
+    price: z.number(),
+    discount: z.number(),
+    total: z.number(),
+    vat: z.number(),
+    account_number: z.number().nullable()
+  }))
+});
+
+export const CreateInvoiceOutputSchema = z.object({
+  ...writeResultFields,
+  document_number: z.string(),
+  customer_number: z.string(),
+  customer_name: z.string().nullable(),
+  total: z.number(),
+  currency: z.string()
+});
+
+export const UpdateInvoiceOutputSchema = z.object({
+  ...writeResultFields,
+  document_number: z.string(),
+  total: z.number()
+});
+
+export const BookkeepInvoiceOutputSchema = z.object({
+  ...writeResultFields,
+  document_number: z.string(),
+  booked: z.literal(true),
+  voucher_number: z.number().nullable(),
+  voucher_series: z.string().nullable(),
+  voucher_year: z.number().nullable()
+});
+
+export const CancelInvoiceOutputSchema = z.object({
+  ...writeResultFields,
+  document_number: z.string(),
+  cancelled: z.literal(true)
+});
+
+export const CreditInvoiceOutputSchema = z.object({
+  ...writeResultFields,
+  original_document_number: z.string(),
+  credit_document_number: z.string(),
+  total: z.number()
+});
+
+export const SendInvoiceEmailOutputSchema = z.object({
+  ...writeResultFields,
+  document_number: z.string(),
+  sent: z.literal(true)
+});
+
+export type ListInvoicesOutput = z.infer<typeof ListInvoicesOutputSchema>;
+export type GetInvoiceOutput = z.infer<typeof GetInvoiceOutputSchema>;
+export type CreateInvoiceOutput = z.infer<typeof CreateInvoiceOutputSchema>;
+export type UpdateInvoiceOutput = z.infer<typeof UpdateInvoiceOutputSchema>;
+export type BookkeepInvoiceOutput = z.infer<typeof BookkeepInvoiceOutputSchema>;
+export type CancelInvoiceOutput = z.infer<typeof CancelInvoiceOutputSchema>;
+export type CreditInvoiceOutput = z.infer<typeof CreditInvoiceOutputSchema>;
+export type SendInvoiceEmailOutput = z.infer<typeof SendInvoiceEmailOutputSchema>;

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { listMetaFields, truncationFields, writeResultFields } from "./common.js";
 import { ResponseFormat, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../constants.js";
 import { DatePeriodEnum } from "./invoices.js";
 
@@ -127,3 +128,102 @@ export const PayablesReportSchema = z.object({
 }).strict();
 
 export type PayablesReportInput = z.infer<typeof PayablesReportSchema>;
+
+/* ---- output schemas (see src/schemas/common.ts for the rules) ---- */
+
+export const ListSupplierInvoicesOutputSchema = z.object({
+  ...listMetaFields,
+  period_description: z.string().optional(),
+  invoices: z.array(z.object({
+    given_number: z.string(),
+    supplier_number: z.string(),
+    supplier_name: z.string().nullable(),
+    invoice_number: z.string().nullable(),
+    invoice_date: z.string().nullable(),
+    due_date: z.string().nullable(),
+    total: z.number(),
+    balance: z.number(),
+    currency: z.string(),
+    booked: z.boolean(),
+    cancelled: z.boolean(),
+    status: z.string()
+  }))
+});
+
+export const GetSupplierInvoiceOutputSchema = z.object({
+  given_number: z.string(),
+  supplier_number: z.string(),
+  supplier_name: z.string().nullable(),
+  invoice_number: z.string().nullable(),
+  invoice_date: z.string().nullable(),
+  due_date: z.string().nullable(),
+  total: z.number(),
+  balance: z.number(),
+  currency: z.string(),
+  ocr: z.string().nullable(),
+  booked: z.boolean(),
+  cancelled: z.boolean(),
+  credit: z.boolean(),
+  payment_pending: z.boolean(),
+  comments: z.string().nullable(),
+  rows: z.array(z.object({
+    article_number: z.string().nullable(),
+    account: z.number().nullable(),
+    account_description: z.string().nullable(),
+    debit: z.number(),
+    credit: z.number(),
+    total: z.number(),
+    project: z.string().nullable(),
+    cost_center: z.string().nullable()
+  }))
+});
+
+export const ApproveSupplierInvoiceOutputSchema = z.object({
+  ...writeResultFields,
+  given_number: z.string(),
+  supplier_name: z.string().nullable(),
+  total: z.number(),
+  payment_pending: z.boolean()
+});
+
+/**
+ * The handler builds this one mutably as a Record, adding groupings that depend
+ * on `group_by` and `include_details` — so tsc cannot check it against the
+ * schema the way it does for the others. The three conditional keys are declared
+ * optional and were read off the handler directly.
+ */
+export const PayablesReportOutputSchema = z.object({
+  summary: z.object({
+    total_invoices: z.number(),
+    total_invoice_amount: z.number(),
+    total_payable_balance: z.number(),
+    unique_suppliers: z.number()
+  }),
+  ...truncationFields,
+  by_age_bucket: z.array(z.object({
+    bucket: z.string(),
+    count: z.number(),
+    total_balance: z.number()
+  })).optional().describe("Present when group_by is 'age_bucket' or 'both'"),
+  by_supplier: z.array(z.object({
+    supplier: z.string(),
+    count: z.number(),
+    total_balance: z.number()
+  })).optional().describe("Present when group_by is 'supplier' or 'both'"),
+  invoices: z.array(z.object({
+    given_number: z.string(),
+    supplier_number: z.string(),
+    supplier_name: z.string().nullable(),
+    invoice_number: z.string().nullable(),
+    invoice_date: z.string().nullable(),
+    due_date: z.string().nullable(),
+    total: z.number(),
+    balance: z.number(),
+    age_bucket: z.string()
+  })).optional().describe("Present when include_details is true")
+});
+
+export type ListSupplierInvoicesOutput = z.infer<typeof ListSupplierInvoicesOutputSchema>;
+export type GetSupplierInvoiceOutput = z.infer<typeof GetSupplierInvoiceOutputSchema>;
+export type ApproveSupplierInvoiceOutput = z.infer<typeof ApproveSupplierInvoiceOutputSchema>;
+export type PayablesReportOutput = z.infer<typeof PayablesReportOutputSchema>;

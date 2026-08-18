@@ -15,6 +15,14 @@ import {
   CreateAccountSchema,
   UpdateAccountSchema,
   DeleteAccountSchema,
+  ListAccountsOutputSchema,
+  GetAccountOutputSchema,
+  MutateAccountOutputSchema,
+  DeleteAccountOutputSchema,
+  type ListAccountsOutput,
+  type GetAccountOutput,
+  type MutateAccountOutput,
+  type DeleteAccountOutput,
   type ListAccountsInput,
   type GetAccountInput,
   type CreateAccountInput,
@@ -89,6 +97,7 @@ Examples:
   - List revenue accounts: from_account=3000, to_account=3999
   - List expense accounts: from_account=4000, to_account=8999`,
       inputSchema: ListAccountsSchema,
+      outputSchema: ListAccountsOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -146,7 +155,7 @@ Examples:
           total = response.MetaInformation?.["@TotalResources"] || accounts.length;
         }
 
-        const output = {
+        const output: ListAccountsOutput = {
           ...buildPaginationMeta(total, params.page, params.limit, accounts.length),
           ...(truncated ? { truncated, truncation_reason: truncationReason } : {}),
           accounts: accounts.map((a) => ({
@@ -191,6 +200,7 @@ Args:
 Returns:
   Complete account details including description, VAT settings, and balances.`,
       inputSchema: GetAccountSchema,
+      outputSchema: GetAccountOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -205,7 +215,7 @@ Returns:
         );
         const account = response.Account;
 
-        const output = {
+        const output: GetAccountOutput = {
           account_number: account.Number,
           description: account.Description,
           active: account.Active ?? true,
@@ -262,6 +272,7 @@ Args:
 Returns:
   The created account details.`,
       inputSchema: CreateAccountSchema,
+      outputSchema: MutateAccountOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -289,7 +300,7 @@ Returns:
         );
         const account = response.Account;
 
-        const output = {
+        const output: MutateAccountOutput = {
           success: true,
           message: `Account ${account.Number} created successfully`,
           account_number: account.Number,
@@ -332,6 +343,7 @@ Args:
 Returns:
   The updated account details.`,
       inputSchema: UpdateAccountSchema,
+      outputSchema: MutateAccountOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -356,7 +368,7 @@ Returns:
         );
         const account = response.Account;
 
-        const output = {
+        const output: MutateAccountOutput = {
           success: true,
           message: `Account ${account.Number} updated successfully`,
           account_number: account.Number,
@@ -395,6 +407,7 @@ Args:
 Returns:
   Confirmation of deletion.`,
       inputSchema: DeleteAccountSchema,
+      outputSchema: DeleteAccountOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -409,7 +422,7 @@ Returns:
           "DELETE"
         );
 
-        const output = {
+        const output: DeleteAccountOutput = {
           success: true,
           message: `Account ${params.account_number} deleted successfully`
         };

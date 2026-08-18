@@ -18,7 +18,13 @@ import {
   UnpaidReportSchema,
   type InvoiceSummaryInput,
   type TopCustomersInput,
-  type UnpaidReportInput
+  type UnpaidReportInput,
+  InvoiceSummaryOutputSchema,
+  TopCustomersOutputSchema,
+  UnpaidReportOutputSchema,
+  type InvoiceSummaryOutput,
+  type TopCustomersOutput,
+  type UnpaidReportOutput,
 } from "../schemas/analytics.js";
 
 // Reuse invoice types from invoices.ts
@@ -167,6 +173,7 @@ Error Handling:
   - Returns truncation warning if >10,000 invoices
   - Returns "Error: ..." if API call fails`,
       inputSchema: InvoiceSummarySchema,
+      outputSchema: InvoiceSummaryOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -243,7 +250,7 @@ Error Handling:
             .sort((a, b) => b.stats.total - a.stats.total); // Sort by total descending
         }
 
-        const output: Record<string, unknown> = {
+        const output: InvoiceSummaryOutput = {
           period: params.period || null,
           date_range: dateRangeDescription || null,
           api_total: result.total,
@@ -370,6 +377,7 @@ Error Handling:
   - Returns truncation warning if >10,000 invoices analyzed
   - Returns "Error: ..." if API call fails`,
       inputSchema: TopCustomersSchema,
+      outputSchema: TopCustomersOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -451,7 +459,7 @@ Error Handling:
         const topCustomers = customerStats.slice(0, params.top_n);
 
         // Build output
-        const output: Record<string, unknown> = {
+        const output: TopCustomersOutput = {
           metric: params.metric,
           period: params.period || null,
           date_range: dateRangeDescription || null,
@@ -460,7 +468,9 @@ Error Handling:
           truncated: result.truncated,
           truncation_reason: result.truncationReason,
           customers: topCustomers.map((c, index) => {
-            const customer: Record<string, unknown> = {
+            // typed off the schema so tsc checks this row and the optional
+            // detail rows added below
+            const customer: TopCustomersOutput["customers"][number] = {
               rank: index + 1,
               customer_number: c.customer_number,
               customer_name: c.customer_name,
@@ -579,6 +589,7 @@ Error Handling:
   - Returns truncation warning if >10,000 invoices
   - Returns "Error: ..." if API call fails`,
       inputSchema: UnpaidReportSchema,
+      outputSchema: UnpaidReportOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -640,7 +651,7 @@ Error Handling:
         }
 
         // Build output
-        const output: Record<string, unknown> = {
+        const output: UnpaidReportOutput = {
           summary: {
             total_invoices: invoices.length,
             total_invoice_amount: totalInvoiceAmount,

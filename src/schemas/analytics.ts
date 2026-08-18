@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { periodFields, truncationFields } from "./common.js";
 import { ResponseFormat } from "../constants.js";
 import { DatePeriodEnum } from "./invoices.js";
 
@@ -101,3 +102,101 @@ export const UnpaidReportSchema = z.object({
 }).strict();
 
 export type UnpaidReportInput = z.infer<typeof UnpaidReportSchema>;
+
+/* ---- output schemas (see src/schemas/common.ts for the rules) ---- */
+
+/** calculateStats() in src/tools/analytics.ts */
+const InvoiceStatsSchema = z.object({
+  count: z.number(),
+  total: z.number(),
+  average: z.number(),
+  min: z.number(),
+  max: z.number(),
+  paid_count: z.number(),
+  unpaid_count: z.number(),
+  draft_count: z.number(),
+  cancelled_count: z.number(),
+  total_balance: z.number()
+});
+
+const AgeGroupSchema = z.object({
+  bucket: z.string(),
+  count: z.number(),
+  total_balance: z.number()
+});
+
+export const InvoiceSummaryOutputSchema = z.object({
+  ...periodFields,
+  api_total: z.number(),
+  api_total_is_exact: z.boolean(),
+  fetched: z.number(),
+  ...truncationFields,
+  summary: InvoiceStatsSchema,
+  groups: z.array(z.object({ key: z.string(), stats: InvoiceStatsSchema }))
+    .optional().describe("Present when group_by is set"),
+  invoices: z.array(z.object({
+    document_number: z.string(),
+    customer_number: z.string(),
+    customer_name: z.string().nullable(),
+    invoice_date: z.string().nullable(),
+    total: z.number(),
+    balance: z.number(),
+    status: z.string()
+  })).optional().describe("Present when include_details is true")
+});
+
+export const TopCustomersOutputSchema = z.object({
+  metric: z.string(),
+  ...periodFields,
+  total_invoices_analyzed: z.number(),
+  unique_customers: z.number(),
+  ...truncationFields,
+  customers: z.array(z.object({
+    rank: z.number(),
+    customer_number: z.string(),
+    customer_name: z.string(),
+    total_amount: z.number(),
+    invoice_count: z.number(),
+    unpaid_amount: z.number(),
+    average_invoice: z.number(),
+    invoices: z.array(z.object({
+      document_number: z.string(),
+      // read straight off the payload here, unlike the top-level list which
+      // applies a `|| null` fallback
+      invoice_date: z.string().nullish(),
+      total: z.number(),
+      balance: z.number()
+    })).optional().describe("Present when include_details is true")
+  }))
+});
+
+export const UnpaidReportOutputSchema = z.object({
+  summary: z.object({
+    total_invoices: z.number(),
+    total_invoice_amount: z.number(),
+    total_unpaid_balance: z.number(),
+    unique_customers: z.number()
+  }),
+  ...truncationFields,
+  by_age_bucket: z.array(AgeGroupSchema)
+    .optional().describe("Present when group_by is 'age_bucket' or 'both'"),
+  by_customer: z.array(z.object({
+    customer: z.string(),
+    count: z.number(),
+    total_balance: z.number()
+  })).optional().describe("Present when group_by is 'customer' or 'both'"),
+  invoices: z.array(z.object({
+    document_number: z.string(),
+    customer_number: z.string(),
+    customer_name: z.string().nullable(),
+    invoice_date: z.string().nullable(),
+    due_date: z.string().nullable(),
+    total: z.number(),
+    balance: z.number(),
+    age_bucket: z.string()
+  })).optional().describe("Present when include_details is true")
+});
+
+export type InvoiceSummaryOutput = z.infer<typeof InvoiceSummaryOutputSchema>;
+export type TopCustomersOutput = z.infer<typeof TopCustomersOutputSchema>;
+export type UnpaidReportOutput = z.infer<typeof UnpaidReportOutputSchema>;

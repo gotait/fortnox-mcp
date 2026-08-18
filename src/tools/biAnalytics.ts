@@ -52,7 +52,29 @@ import {
   type CostCenterAnalysisInput,
   type ExpenseAnalysisInput,
   type YearlyComparisonInput,
-  type GrossMarginTrendInput
+  type GrossMarginTrendInput,
+  CashFlowForecastOutputSchema,
+  OrderPipelineOutputSchema,
+  SalesFunnelOutputSchema,
+  ProductPerformanceOutputSchema,
+  PeriodComparisonOutputSchema,
+  CustomerGrowthOutputSchema,
+  ProjectProfitabilityOutputSchema,
+  CostCenterAnalysisOutputSchema,
+  ExpenseAnalysisOutputSchema,
+  YearlyComparisonOutputSchema,
+  GrossMarginTrendOutputSchema,
+  type CashFlowForecastOutput,
+  type OrderPipelineOutput,
+  type SalesFunnelOutput,
+  type ProductPerformanceOutput,
+  type PeriodComparisonOutput,
+  type CustomerGrowthOutput,
+  type ProjectProfitabilityOutput,
+  type CostCenterAnalysisOutput,
+  type ExpenseAnalysisOutput,
+  type YearlyComparisonOutput,
+  type GrossMarginTrendOutput,
 } from "../schemas/biAnalytics.js";
 
 // Shared type interfaces
@@ -220,6 +242,7 @@ Error Handling:
   - If supplier invoices are unavailable (missing scope), outflows show as 0 with a warning
   - Returns "Error: ..." if the API call fails`,
       inputSchema: CashFlowForecastSchema,
+      outputSchema: CashFlowForecastOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -358,7 +381,7 @@ Error Handling:
         const totalInflows = sumBy(receivables, inv => inv.Balance || 0);
         const totalOutflows = sumBy(payables, inv => inv.Balance || 0);
 
-        const output: Record<string, unknown> = {
+        const output: CashFlowForecastOutput = {
           forecast: {
             horizon_days: params.horizon_days,
             group_by: params.group_by,
@@ -458,6 +481,7 @@ Error Handling:
   - Fetches at most 10,000 orders per status filter; sets truncated=true with a truncation_reason if the cap is hit
   - Returns "Error: ..." if the API call fails`,
       inputSchema: OrderPipelineSchema,
+      outputSchema: OrderPipelineOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -550,7 +574,7 @@ Error Handling:
         const invoicedOrders = orders.filter(o => o.status === "invoiced");
         const cancelledOrders = orders.filter(o => o.status === "cancelled");
 
-        const output = {
+        const output: OrderPipelineOutput = {
           period: params.period || null,
           date_range: dateRangeDescription || null,
           group_by: params.group_by,
@@ -639,6 +663,7 @@ Error Handling:
   - Fetches at most 10,000 documents per stage filter; sets truncated=true if any fetch hit the cap
   - Returns "Error: ..." if the API call fails`,
       inputSchema: SalesFunnelSchema,
+      outputSchema: SalesFunnelOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -763,7 +788,7 @@ Error Handling:
           }
         ];
 
-        const output = {
+        const output: SalesFunnelOutput = {
           period: params.period || null,
           date_range: dateRangeDescription || null,
           funnel: {
@@ -860,6 +885,7 @@ Error Handling:
   - Fetches at most 10,000 invoices; sets truncated=true if the cap is hit
   - Returns "Error: ..." if the API call fails`,
       inputSchema: ProductPerformanceSchema,
+      outputSchema: ProductPerformanceOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -936,7 +962,7 @@ Error Handling:
           })
           .slice(0, params.top_n);
 
-        const output = {
+        const output: ProductPerformanceOutput = {
           period: params.period || null,
           date_range: dateRangeDescription || null,
           metric: params.metric,
@@ -1025,6 +1051,7 @@ Error Handling:
   - Fetches at most 10,000 invoices per period; sets truncated=true if the cap is hit
   - Returns "Error: ..." if the API call fails`,
       inputSchema: PeriodComparisonSchema,
+      outputSchema: PeriodComparisonOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -1082,7 +1109,7 @@ Error Handling:
           );
         }
 
-        const output = {
+        const output: PeriodComparisonOutput = {
           current_period: {
             period: comparison.currentPeriod.period,
             description: comparison.currentPeriod.description,
@@ -1165,6 +1192,7 @@ Error Handling:
   - Fetches at most 10,000 invoices per period; sets truncated=true if the cap is hit
   - Returns "Error: ..." if the API call fails`,
       inputSchema: CustomerGrowthSchema,
+      outputSchema: CustomerGrowthOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -1270,7 +1298,7 @@ Error Handling:
 
         const topCustomers = filteredGrowth.slice(0, params.top_n);
 
-        const output = {
+        const output: CustomerGrowthOutput = {
           current_period: comparison.currentPeriod,
           previous_period: comparison.previousPeriod,
           filter: params.show,
@@ -1343,6 +1371,7 @@ Error Handling:
   - Fetches at most 10,000 projects; sets truncated=true if the cap is hit
   - Returns "Error: ..." if the API call fails`,
       inputSchema: ProjectProfitabilitySchema,
+      outputSchema: ProjectProfitabilityOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -1368,7 +1397,7 @@ Error Handling:
         }
 
         if (projects.length === 0) {
-          const output = {
+          const output: ProjectProfitabilityOutput = {
             message: params.project_number
               ? `Project ${params.project_number} not found`
               : "No projects found",
@@ -1394,7 +1423,7 @@ Error Handling:
           end_date: p.EndDate || null
         }));
 
-        const output = {
+        const output: ProjectProfitabilityOutput = {
           note: "Project revenue/cost breakdown requires voucher analysis with project dimension. Showing project list.",
           projects: projectStats,
           truncated: projectsResult.truncated
@@ -1451,6 +1480,7 @@ Error Handling:
   - Fetches at most 10,000 cost centers; sets truncated=true if the cap is hit
   - Returns "Error: ..." if the API call fails`,
       inputSchema: CostCenterAnalysisSchema,
+      outputSchema: CostCenterAnalysisOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -1485,7 +1515,7 @@ Error Handling:
           active: cc.Active !== false
         }));
 
-        const output = {
+        const output: CostCenterAnalysisOutput = {
           note: "Cost breakdown requires voucher analysis with cost center dimension. Showing cost center list.",
           cost_centers: costCenterStats,
           truncated: costCentersResult.truncated
@@ -1551,6 +1581,7 @@ Returns:
 Error Handling:
   - Returns "Error: ..." only on internal errors (no API calls are made)`,
       inputSchema: ExpenseAnalysisSchema,
+      outputSchema: ExpenseAnalysisOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -1585,7 +1616,7 @@ Error Handling:
           return classStart <= params.account_range_to && classEnd >= params.account_range_from;
         });
 
-        const output = {
+        const output: ExpenseAnalysisOutput = {
           period: params.period || null,
           date_range: dateRangeDescription || null,
           account_range: {
@@ -1654,6 +1685,7 @@ Error Handling:
   - Fetches at most 10,000 invoices per year; sets truncated=true if any year hit the cap
   - Returns "Error: ..." if the API call fails`,
       inputSchema: YearlyComparisonSchema,
+      outputSchema: YearlyComparisonOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -1715,7 +1747,7 @@ Error Handling:
         const currentYear = yearRanges[0]?.year;
         const partialYearNote = `The current year (${currentYear}) only contains data through today; its figures understate a full year when compared against complete prior years.`;
 
-        const output = {
+        const output: YearlyComparisonOutput = {
           years_compared: params.years,
           metrics: params.metrics,
           note: partialYearNote,
@@ -1826,6 +1858,7 @@ Returns:
 Error Handling:
   - Returns "Error: ..." only on internal errors (no API calls are made)`,
       inputSchema: GrossMarginTrendSchema,
+      outputSchema: GrossMarginTrendOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -1850,7 +1883,7 @@ Error Handling:
 
         // Note: Full margin calculation requires voucher/SIE analysis
         // This shows the structure for the tool
-        const output = {
+        const output: GrossMarginTrendOutput = {
           period: params.period || null,
           date_range: dateRangeDescription || null,
           group_by: params.group_by,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { paginationMetaFields, truncationFields, writeResultFields } from "./common.js";
 import { ResponseFormat, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../constants.js";
 import { DatePeriodEnum } from "./invoices.js";
 
@@ -161,6 +162,7 @@ export const AccountActivitySchema = z.object({
     from: z.number().int().min(1000).max(9999),
     to: z.number().int().min(1000).max(9999)
   })
+    .strict()
     .optional()
     .describe("Account number range (e.g., 3000-3999 for revenue accounts)"),
   financial_year: z.number()
@@ -264,3 +266,114 @@ export const SearchVouchersSchema = z.object({
 }).strict();
 
 export type SearchVouchersInput = z.infer<typeof SearchVouchersSchema>;
+
+/* ---- output schemas (see src/schemas/common.ts for the rules) ---- */
+
+export const ListVouchersOutputSchema = z.object({
+  ...paginationMetaFields,
+  vouchers: z.array(z.object({
+    voucher_series: z.string(),
+    voucher_number: z.number(),
+    description: z.string(),
+    transaction_date: z.string()
+  }))
+});
+
+export const GetVoucherOutputSchema = z.object({
+  voucher_series: z.string(),
+  voucher_number: z.number(),
+  year: z.number(),
+  description: z.string(),
+  transaction_date: z.string(),
+  rows: z.array(z.object({
+    account_number: z.number(),
+    debit: z.number(),
+    credit: z.number(),
+    description: z.string().nullable(),
+    cost_center: z.string().nullable(),
+    project: z.string().nullable()
+  }))
+});
+
+export const CreateVoucherOutputSchema = z.object({
+  ...writeResultFields,
+  voucher_series: z.string(),
+  voucher_number: z.number(),
+  description: z.string(),
+  transaction_date: z.string()
+});
+
+export const ListVoucherSeriesOutputSchema = z.object({
+  count: z.number(),
+  series: z.array(z.object({
+    code: z.string(),
+    description: z.string(),
+    manual: z.boolean()
+  }))
+});
+
+export const AccountActivityOutputSchema = z.object({
+  filter: z.object({
+    accounts: z.array(z.number()),
+    account_range: z.object({ from: z.number(), to: z.number() }).nullable(),
+    financial_year: z.number().optional(),
+    date_range: z.string().nullable(),
+    voucher_series: z.string().nullable()
+  }),
+  vouchers_scanned: z.number(),
+  total_vouchers_available: z.number(),
+  total_vouchers_available_is_exact: z.boolean(),
+  ...truncationFields,
+  matching_transactions: z.number(),
+  /** Only built when include_summary is set. */
+  summary: z.array(z.object({
+    account: z.number(),
+    total_debit: z.number(),
+    total_credit: z.number(),
+    net_change: z.number(),
+    transaction_count: z.number()
+  })).optional(),
+  transactions: z.array(z.object({
+    voucher_series: z.string(),
+    voucher_number: z.number(),
+    transaction_date: z.string(),
+    voucher_description: z.string(),
+    account: z.number(),
+    description: z.string().nullable(),
+    debit: z.number(),
+    credit: z.number()
+  }))
+});
+
+export const SearchVouchersOutputSchema = z.object({
+  search_text: z.string(),
+  case_sensitive: z.boolean(),
+  financial_year: z.number().optional(),
+  date_range: z.string().nullable(),
+  voucher_series: z.string().nullable(),
+  vouchers_scanned: z.number(),
+  total_vouchers_available: z.number(),
+  total_vouchers_available_is_exact: z.boolean(),
+  ...truncationFields,
+  matching_count: z.number(),
+  vouchers: z.array(z.object({
+    voucher_series: z.string(),
+    voucher_number: z.number(),
+    transaction_date: z.string(),
+    description: z.string(),
+    matched_in: z.enum(["description", "row"]),
+    rows: z.array(z.object({
+      account: z.number(),
+      description: z.string().nullable(),
+      debit: z.number(),
+      credit: z.number()
+    })).optional()
+  }))
+});
+
+export type ListVouchersOutput = z.infer<typeof ListVouchersOutputSchema>;
+export type GetVoucherOutput = z.infer<typeof GetVoucherOutputSchema>;
+export type CreateVoucherOutput = z.infer<typeof CreateVoucherOutputSchema>;
+export type ListVoucherSeriesOutput = z.infer<typeof ListVoucherSeriesOutputSchema>;
+export type AccountActivityOutput = z.infer<typeof AccountActivityOutputSchema>;
+export type SearchVouchersOutput = z.infer<typeof SearchVouchersOutputSchema>;

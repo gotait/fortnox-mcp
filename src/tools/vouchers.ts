@@ -25,7 +25,19 @@ import {
   type CreateVoucherInput,
   type ListVoucherSeriesInput,
   type AccountActivityInput,
-  type SearchVouchersInput
+  type SearchVouchersInput,
+  ListVouchersOutputSchema,
+  GetVoucherOutputSchema,
+  CreateVoucherOutputSchema,
+  ListVoucherSeriesOutputSchema,
+  AccountActivityOutputSchema,
+  SearchVouchersOutputSchema,
+  type ListVouchersOutput,
+  type GetVoucherOutput,
+  type CreateVoucherOutput,
+  type ListVoucherSeriesOutput,
+  type AccountActivityOutput,
+  type SearchVouchersOutput,
 } from "../schemas/vouchers.js";
 
 // API response types
@@ -117,6 +129,7 @@ Examples:
   - List vouchers for 2025: financial_year=4
   - List manual vouchers: voucher_series="A", financial_year=4`,
       inputSchema: ListVouchersSchema,
+      outputSchema: ListVouchersOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -151,7 +164,7 @@ Examples:
         const vouchers = response.Vouchers || [];
         const total = response.MetaInformation?.["@TotalResources"] || vouchers.length;
 
-        const output: Record<string, unknown> = {
+        const output: ListVouchersOutput = {
           ...buildPaginationMeta(total, params.page, params.limit, vouchers.length),
           vouchers: vouchers.map((v) => ({
             voucher_series: v.VoucherSeries,
@@ -201,6 +214,7 @@ Args:
 Returns:
   Complete voucher details including all debit/credit rows.`,
       inputSchema: GetVoucherSchema,
+      outputSchema: GetVoucherOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -220,7 +234,7 @@ Returns:
         const response = await fortnoxRequest<VoucherResponse>(endpoint, "GET", undefined, queryParams);
         const voucher = response.Voucher;
 
-        const output = {
+        const output: GetVoucherOutput = {
           voucher_series: voucher.VoucherSeries,
           voucher_number: voucher.VoucherNumber,
           year: voucher.Year,
@@ -310,6 +324,7 @@ Example:
     ]
   }`,
       inputSchema: CreateVoucherSchema,
+      outputSchema: CreateVoucherOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -363,7 +378,7 @@ Example:
         );
         const voucher = response.Voucher;
 
-        const output = {
+        const output: CreateVoucherOutput = {
           success: true,
           message: `Voucher ${voucher.VoucherSeries}${voucher.VoucherNumber} created successfully`,
           voucher_series: voucher.VoucherSeries,
@@ -406,6 +421,7 @@ Args:
 Returns:
   List of voucher series with code, description, and whether manual entries are allowed.`,
       inputSchema: ListVoucherSeriesSchema,
+      outputSchema: ListVoucherSeriesOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -418,7 +434,7 @@ Returns:
         const response = await fortnoxRequest<VoucherSeriesListResponse>("/3/voucherseries");
         const series = response.VoucherSeriesCollection || [];
 
-        const output = {
+        const output: ListVoucherSeriesOutput = {
           count: series.length,
           series: series.map((s) => ({
             code: s.Code,
@@ -495,6 +511,7 @@ Examples:
   - Salary costs: account_range={ from: 7000, to: 7999 }, financial_year=4
   - Rent expenses: account_number=5010, financial_year=4`,
       inputSchema: AccountActivitySchema,
+      outputSchema: AccountActivityOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -684,7 +701,7 @@ Examples:
               .sort((a, b) => a.account - b.account)
           : undefined;
 
-        const output: Record<string, unknown> = {
+        const output: AccountActivityOutput = {
           filter: {
             accounts: Array.from(accountFilter),
             account_range: params.account_range || null,
@@ -814,6 +831,7 @@ Examples:
   - Find salary vouchers: search_text="salary", financial_year=4, period="this_year"
   - Find rent payments: search_text="rent", financial_year=4, voucher_series="B"`,
       inputSchema: SearchVouchersSchema,
+      outputSchema: SearchVouchersOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -985,7 +1003,7 @@ Examples:
         );
 
         // Build output
-        const output: Record<string, unknown> = {
+        const output: SearchVouchersOutput = {
           search_text: params.search_text,
           case_sensitive: params.case_sensitive,
           financial_year: params.financial_year,

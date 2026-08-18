@@ -26,7 +26,23 @@ import {
   type CreateInvoiceInput,
   type UpdateInvoiceInput,
   type InvoiceActionInput,
-  type SendInvoiceEmailInput
+  type SendInvoiceEmailInput,
+  ListInvoicesOutputSchema,
+  GetInvoiceOutputSchema,
+  CreateInvoiceOutputSchema,
+  UpdateInvoiceOutputSchema,
+  BookkeepInvoiceOutputSchema,
+  CancelInvoiceOutputSchema,
+  CreditInvoiceOutputSchema,
+  SendInvoiceEmailOutputSchema,
+  type ListInvoicesOutput,
+  type GetInvoiceOutput,
+  type CreateInvoiceOutput,
+  type UpdateInvoiceOutput,
+  type BookkeepInvoiceOutput,
+  type CancelInvoiceOutput,
+  type CreditInvoiceOutput,
+  type SendInvoiceEmailOutput,
 } from "../schemas/invoices.js";
 
 // API response types
@@ -139,6 +155,7 @@ Error Handling:
   - Returns "Error: Rate limit exceeded..." if API limit hit
   - Returns truncation info if fetch_all hits safety limits`,
       inputSchema: ListInvoicesSchema,
+      outputSchema: ListInvoicesOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -226,7 +243,7 @@ Error Handling:
               next_offset: params.page * params.limit < total ? params.page * params.limit : undefined
             };
 
-        const output = {
+        const output: ListInvoicesOutput = {
           ...paginationMeta,
           period_description: params.period ? getPeriodDescription(params.period) : undefined,
           invoices: invoices.map((inv) => ({
@@ -322,6 +339,7 @@ Args:
 Returns:
   Complete invoice details including customer info, dates, amounts, line items, and payment status.`,
       inputSchema: GetInvoiceSchema,
+      outputSchema: GetInvoiceOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -336,7 +354,7 @@ Returns:
         );
         const invoice = response.Invoice;
 
-        const output = {
+        const output: GetInvoiceOutput = {
           document_number: invoice.DocumentNumber,
           customer_number: invoice.CustomerNumber,
           customer_name: invoice.CustomerName || null,
@@ -451,6 +469,7 @@ Returns:
 Example rows:
   [{ "description": "Consulting services", "quantity": 10, "price": 1000 }]`,
       inputSchema: CreateInvoiceSchema,
+      outputSchema: CreateInvoiceOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -495,7 +514,7 @@ Example rows:
         );
         const invoice = response.Invoice;
 
-        const output = {
+        const output: CreateInvoiceOutput = {
           success: true,
           message: `Invoice #${invoice.DocumentNumber} created successfully`,
           document_number: invoice.DocumentNumber,
@@ -549,6 +568,7 @@ Note: Unlike create_invoice, customer_number and invoice_type cannot be changed 
 Returns:
   The updated invoice details.`,
       inputSchema: UpdateInvoiceSchema,
+      outputSchema: UpdateInvoiceOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -593,7 +613,7 @@ Returns:
         );
         const invoice = response.Invoice;
 
-        const output = {
+        const output: UpdateInvoiceOutput = {
           success: true,
           message: `Invoice #${invoice.DocumentNumber} updated successfully`,
           document_number: invoice.DocumentNumber,
@@ -631,6 +651,7 @@ Args:
 Returns:
   Confirmation of bookkeeping with the created voucher reference.`,
       inputSchema: InvoiceActionSchema,
+      outputSchema: BookkeepInvoiceOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -646,7 +667,7 @@ Returns:
         );
         const invoice = response.Invoice;
 
-        const output = {
+        const output: BookkeepInvoiceOutput = {
           success: true,
           message: `Invoice #${invoice.DocumentNumber} has been booked`,
           document_number: invoice.DocumentNumber,
@@ -690,6 +711,7 @@ Args:
 Returns:
   Confirmation of cancellation.`,
       inputSchema: InvoiceActionSchema,
+      outputSchema: CancelInvoiceOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -705,7 +727,7 @@ Returns:
         );
         const invoice = response.Invoice;
 
-        const output = {
+        const output: CancelInvoiceOutput = {
           success: true,
           message: `Invoice #${invoice.DocumentNumber} has been cancelled`,
           document_number: invoice.DocumentNumber,
@@ -741,6 +763,7 @@ Args:
 Returns:
   The created credit invoice details.`,
       inputSchema: InvoiceActionSchema,
+      outputSchema: CreditInvoiceOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -756,7 +779,7 @@ Returns:
         );
         const creditInvoice = response.Invoice;
 
-        const output = {
+        const output: CreditInvoiceOutput = {
           success: true,
           message: `Credit invoice #${creditInvoice.DocumentNumber} created for invoice #${params.document_number}`,
           original_document_number: params.document_number,
@@ -797,6 +820,7 @@ Args:
 Returns:
   Confirmation that the email was sent.`,
       inputSchema: SendInvoiceEmailSchema,
+      outputSchema: SendInvoiceEmailOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -813,7 +837,7 @@ Returns:
         );
         const invoice = response.Invoice;
 
-        const output = {
+        const output: SendInvoiceEmailOutput = {
           success: true,
           message: `Invoice #${invoice.DocumentNumber} sent by email`,
           document_number: invoice.DocumentNumber,

@@ -18,6 +18,41 @@ const CompanyInfoSchema = z.object({
 
 type CompanyInfoInput = z.infer<typeof CompanyInfoSchema>;
 
+/* ---- output schemas (see src/schemas/common.ts for the rules) ---- */
+
+const CompanyInfoOutputSchema = z.object({
+  company_name: z.string(),
+  organisation_number: z.string(),
+  database_number: z.string(),
+  address: z.string().nullable(),
+  zip_code: z.string().nullable(),
+  city: z.string().nullable(),
+  country: z.string().nullable(),
+  country_code: z.string().nullable(),
+  visit_address: z.string().nullable(),
+  visit_zip_code: z.string().nullable(),
+  visit_city: z.string().nullable(),
+  visit_country: z.string().nullable(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  phone2: z.string().nullable(),
+  fax: z.string().nullable(),
+  website: z.string().nullable()
+});
+
+const ListFinancialYearsOutputSchema = z.object({
+  count: z.number(),
+  financial_years: z.array(z.object({
+    id: z.number(),
+    from_date: z.string(),
+    to_date: z.string(),
+    accounting_method: z.string().nullable()
+  }))
+});
+
+type CompanyInfoOutput = z.infer<typeof CompanyInfoOutputSchema>;
+type ListFinancialYearsOutput = z.infer<typeof ListFinancialYearsOutputSchema>;
+
 // API response types
 interface FortnoxCompanyInfo {
   Address: string;
@@ -76,6 +111,7 @@ Args:
 Returns:
   Company details including name, organisation number, address, and contact information.`,
       inputSchema: CompanyInfoSchema,
+      outputSchema: CompanyInfoOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -88,7 +124,7 @@ Returns:
         const response = await fortnoxRequest<CompanyInfoResponse>("/3/companyinformation");
         const company = response.CompanyInformation;
 
-        const output = {
+        const output: CompanyInfoOutput = {
           company_name: company.CompanyName,
           organisation_number: company.OrganizationNumber,
           database_number: company.DatabaseNumber,
@@ -153,6 +189,7 @@ Args:
 Returns:
   List of financial years with ID, date range, and accounting method.`,
       inputSchema: ListFinancialYearsSchema,
+      outputSchema: ListFinancialYearsOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -165,7 +202,7 @@ Returns:
         const response = await fortnoxRequest<FinancialYearsResponse>("/3/financialyears");
         const financialYears = response.FinancialYears || [];
 
-        const output = {
+        const output: ListFinancialYearsOutput = {
           count: financialYears.length,
           financial_years: financialYears.map((fy) => ({
             id: fy.Id,

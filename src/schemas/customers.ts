@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { paginationMetaFields, writeResultFields } from "./common.js";
 import { ResponseFormat, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../constants.js";
 
 /**
@@ -214,3 +215,47 @@ export const DeleteCustomerSchema = z.object({
 }).strict();
 
 export type DeleteCustomerInput = z.infer<typeof DeleteCustomerSchema>;
+
+/* ---- output schemas (see src/schemas/common.ts for the rules) ---- */
+
+export const ListCustomersOutputSchema = z.object({
+  ...paginationMetaFields,
+  customers: z.array(z.object({
+    customer_number: z.string(),
+    name: z.string(),
+    email: z.string().nullable(),
+    city: z.string().nullable(),
+    organisation_number: z.string().nullable()
+  }))
+});
+
+export const GetCustomerOutputSchema = z.object({
+  customer_number: z.string(),
+  name: z.string(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  address1: z.string().nullable(),
+  address2: z.string().nullable(),
+  zip_code: z.string().nullable(),
+  city: z.string().nullable(),
+  country: z.string().nullable(),
+  organisation_number: z.string().nullable(),
+  vat_number: z.string().nullable(),
+  currency: z.string().nullable(),
+  active: z.boolean(),
+  terms_of_payment: z.string().nullable(),
+  comments: z.string().nullable()
+});
+
+export const MutateCustomerOutputSchema = z.object({
+  ...writeResultFields,
+  customer_number: z.string(),
+  name: z.string()
+});
+
+export const DeleteCustomerOutputSchema = z.object({ ...writeResultFields });
+
+export type ListCustomersOutput = z.infer<typeof ListCustomersOutputSchema>;
+export type GetCustomerOutput = z.infer<typeof GetCustomerOutputSchema>;
+export type MutateCustomerOutput = z.infer<typeof MutateCustomerOutputSchema>;
+export type DeleteCustomerOutput = z.infer<typeof DeleteCustomerOutputSchema>;

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { paginationMetaFields, truncationFields, writeResultFields } from "./common.js";
 import { ResponseFormat, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../constants.js";
 
 /**
@@ -138,3 +139,43 @@ export const DeleteAccountSchema = z.object({
 }).strict();
 
 export type DeleteAccountInput = z.infer<typeof DeleteAccountSchema>;
+
+/* ---- output schemas (see src/schemas/common.ts for the rules) ---- */
+
+const AccountListItemOutput = z.object({
+  account_number: z.number(),
+  description: z.string(),
+  active: z.boolean()
+});
+
+export const ListAccountsOutputSchema = z.object({
+  ...paginationMetaFields,
+  ...truncationFields,
+  accounts: z.array(AccountListItemOutput)
+});
+
+export const GetAccountOutputSchema = z.object({
+  account_number: z.number(),
+  description: z.string(),
+  active: z.boolean(),
+  vat_code: z.string().nullable(),
+  balance_brought_forward: z.number(),
+  balance_carried_forward: z.number(),
+  cost_center_settings: z.string().nullable(),
+  project_settings: z.string().nullable(),
+  sru_code: z.number().nullable(),
+  year: z.number().nullable()
+});
+
+export const MutateAccountOutputSchema = z.object({
+  ...writeResultFields,
+  account_number: z.number(),
+  description: z.string()
+});
+
+export const DeleteAccountOutputSchema = z.object({ ...writeResultFields });
+
+export type ListAccountsOutput = z.infer<typeof ListAccountsOutputSchema>;
+export type GetAccountOutput = z.infer<typeof GetAccountOutputSchema>;
+export type MutateAccountOutput = z.infer<typeof MutateAccountOutputSchema>;
+export type DeleteAccountOutput = z.infer<typeof DeleteAccountOutputSchema>;

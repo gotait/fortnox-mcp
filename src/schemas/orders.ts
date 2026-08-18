@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { listMetaFields } from "./common.js";
 import { ResponseFormat, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../constants.js";
 import { DatePeriodEnum } from "./invoices.js";
 
@@ -153,3 +154,41 @@ export const GetOfferSchema = z.object({
 }).strict();
 
 export type GetOfferInput = z.infer<typeof GetOfferSchema>;
+
+/* ---- output schemas (see src/schemas/common.ts for the rules) ---- */
+
+export const ListOrdersOutputSchema = z.object({
+  ...listMetaFields,
+  period_description: z.string().optional(),
+  orders: z.array(z.object({
+    document_number: z.string(),
+    customer_number: z.string(),
+    customer_name: z.string().nullable(),
+    order_date: z.string().nullable(),
+    delivery_date: z.string().nullable(),
+    total: z.number(),
+    currency: z.string(),
+    status: z.string(),
+    invoice_reference: z.string().nullable()
+  }))
+});
+
+export const ListOffersOutputSchema = z.object({
+  ...listMetaFields,
+  period_description: z.string().optional(),
+  offers: z.array(z.object({
+    document_number: z.string(),
+    customer_number: z.string(),
+    customer_name: z.string().nullable(),
+    offer_date: z.string().nullable(),
+    expire_date: z.string().nullable(),
+    total: z.number(),
+    currency: z.string(),
+    status: z.string(),
+    expired: z.boolean(),
+    order_reference: z.string().nullable()
+  }))
+});
+
+export type ListOrdersOutput = z.infer<typeof ListOrdersOutputSchema>;
+export type ListOffersOutput = z.infer<typeof ListOffersOutputSchema>;

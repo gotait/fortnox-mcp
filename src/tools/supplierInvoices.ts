@@ -25,7 +25,15 @@ import {
   type ListSupplierInvoicesInput,
   type GetSupplierInvoiceInput,
   type ApproveSupplierInvoiceInput,
-  type PayablesReportInput
+  type PayablesReportInput,
+  ListSupplierInvoicesOutputSchema,
+  GetSupplierInvoiceOutputSchema,
+  ApproveSupplierInvoiceOutputSchema,
+  PayablesReportOutputSchema,
+  type ListSupplierInvoicesOutput,
+  type GetSupplierInvoiceOutput,
+  type ApproveSupplierInvoiceOutput,
+  type PayablesReportOutput,
 } from "../schemas/supplierInvoices.js";
 
 // API response types
@@ -152,6 +160,7 @@ Examples:
   - Last month's supplier invoices: period="last_month"
   - Supplier invoices this year: supplier_number="1", period="this_year"`,
       inputSchema: ListSupplierInvoicesSchema,
+      outputSchema: ListSupplierInvoicesOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -292,7 +301,7 @@ Examples:
               truncation_reason: truncationReason
             };
 
-        const output = {
+        const output: ListSupplierInvoicesOutput = {
           ...paginationMeta,
           period_description: params.period ? getPeriodDescription(params.period) : undefined,
           invoices: invoices.map((inv) => ({
@@ -391,6 +400,7 @@ Args:
 Returns:
   Complete supplier invoice details including supplier info, dates, amounts, line items, and payment status.`,
       inputSchema: GetSupplierInvoiceSchema,
+      outputSchema: GetSupplierInvoiceOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -405,7 +415,7 @@ Returns:
         );
         const invoice = response.SupplierInvoice;
 
-        const output = {
+        const output: GetSupplierInvoiceOutput = {
           given_number: invoice.GivenNumber,
           supplier_number: invoice.SupplierNumber,
           supplier_name: invoice.SupplierName || null,
@@ -503,6 +513,7 @@ Args:
 Returns:
   Confirmation that the invoice has been approved for payment.`,
       inputSchema: ApproveSupplierInvoiceSchema,
+      outputSchema: ApproveSupplierInvoiceOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -518,7 +529,7 @@ Returns:
         );
         const invoice = response.SupplierInvoice;
 
-        const output = {
+        const output: ApproveSupplierInvoiceOutput = {
           success: true,
           message: `Supplier invoice #${invoice.GivenNumber} has been approved for payment`,
           given_number: invoice.GivenNumber,
@@ -580,6 +591,7 @@ Examples:
   - Large unpaid invoices: min_amount=50000
   - Specific supplier: supplier_number="1"`,
       inputSchema: PayablesReportSchema,
+      outputSchema: PayablesReportOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -645,7 +657,7 @@ Examples:
         }
 
         // Build output
-        const output: Record<string, unknown> = {
+        const output: PayablesReportOutput = {
           summary: {
             total_invoices: invoices.length,
             total_invoice_amount: totalInvoiceAmount,

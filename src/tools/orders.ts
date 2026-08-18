@@ -17,7 +17,11 @@ import {
   ListOrdersSchema,
   ListOffersSchema,
   type ListOrdersInput,
-  type ListOffersInput
+  type ListOffersInput,
+  ListOrdersOutputSchema,
+  ListOffersOutputSchema,
+  type ListOrdersOutput,
+  type ListOffersOutput,
 } from "../schemas/orders.js";
 
 // API response types for Orders
@@ -140,6 +144,7 @@ Error Handling:
   - Returns "Error: Rate limit exceeded..." if API limit hit
   - Returns truncation info if fetch_all hits safety limits`,
       inputSchema: ListOrdersSchema,
+      outputSchema: ListOrdersOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -212,7 +217,7 @@ Error Handling:
               next_offset: params.page * params.limit < total ? params.page * params.limit : undefined
             };
 
-        const output = {
+        const output: ListOrdersOutput = {
           ...paginationMeta,
           period_description: params.period ? getPeriodDescription(params.period) : undefined,
           orders: orders.map((order) => ({
@@ -325,6 +330,7 @@ Error Handling:
   - Returns "Error: Rate limit exceeded..." if API limit hit
   - Returns truncation info if fetch_all hits safety limits`,
       inputSchema: ListOffersSchema,
+      outputSchema: ListOffersOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -397,7 +403,7 @@ Error Handling:
               next_offset: params.page * params.limit < total ? params.page * params.limit : undefined
             };
 
-        const output = {
+        const output: ListOffersOutput = {
           ...paginationMeta,
           period_description: params.period ? getPeriodDescription(params.period) : undefined,
           offers: offers.map((offer) => ({

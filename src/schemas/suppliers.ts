@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { paginationMetaFields, truncationFields, writeResultFields } from "./common.js";
 import { ResponseFormat, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../constants.js";
 
 /**
@@ -223,3 +224,52 @@ export const DeactivateSupplierSchema = z.object({
 }).strict();
 
 export type DeactivateSupplierInput = z.infer<typeof DeactivateSupplierSchema>;
+
+/* ---- output schemas (see src/schemas/common.ts for the rules) ---- */
+
+export const ListSuppliersOutputSchema = z.object({
+  ...paginationMetaFields,
+  ...truncationFields,
+  filter_warning: z.string().optional().describe("Set when a requested filter had to be applied client-side"),
+  suppliers: z.array(z.object({
+    supplier_number: z.string(),
+    name: z.string(),
+    email: z.string().nullable(),
+    city: z.string().nullable(),
+    organisation_number: z.string().nullable()
+  }))
+});
+
+export const GetSupplierOutputSchema = z.object({
+  supplier_number: z.string(),
+  name: z.string(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  address1: z.string().nullable(),
+  address2: z.string().nullable(),
+  zip_code: z.string().nullable(),
+  city: z.string().nullable(),
+  country: z.string().nullable(),
+  organisation_number: z.string().nullable(),
+  vat_number: z.string().nullable(),
+  currency: z.string().nullable(),
+  active: z.boolean(),
+  bank_account: z.string().nullable(),
+  bg_number: z.string().nullable(),
+  pg_number: z.string().nullable(),
+  terms_of_payment: z.string().nullable(),
+  comments: z.string().nullable()
+});
+
+export const MutateSupplierOutputSchema = z.object({
+  ...writeResultFields,
+  supplier_number: z.string(),
+  name: z.string()
+});
+
+export const DeactivateSupplierOutputSchema = z.object({ ...writeResultFields });
+
+export type ListSuppliersOutput = z.infer<typeof ListSuppliersOutputSchema>;
+export type GetSupplierOutput = z.infer<typeof GetSupplierOutputSchema>;
+export type MutateSupplierOutput = z.infer<typeof MutateSupplierOutputSchema>;
+export type DeactivateSupplierOutput = z.infer<typeof DeactivateSupplierOutputSchema>;

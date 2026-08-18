@@ -17,6 +17,14 @@ import {
   CreateCustomerSchema,
   UpdateCustomerSchema,
   DeleteCustomerSchema,
+  ListCustomersOutputSchema,
+  GetCustomerOutputSchema,
+  MutateCustomerOutputSchema,
+  DeleteCustomerOutputSchema,
+  type ListCustomersOutput,
+  type GetCustomerOutput,
+  type MutateCustomerOutput,
+  type DeleteCustomerOutput,
   type ListCustomersInput,
   type GetCustomerInput,
   type CreateCustomerInput,
@@ -96,6 +104,7 @@ Examples:
   - Search by name: search_name="Acme"
   - Get specific customer: customer_number="1001"`,
       inputSchema: ListCustomersSchema,
+      outputSchema: ListCustomersOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -127,7 +136,7 @@ Examples:
         const customers = response.Customers || [];
         const total = response.MetaInformation?.["@TotalResources"] || customers.length;
 
-        const output = {
+        const output: ListCustomersOutput = {
           ...buildPaginationMeta(total, params.page, params.limit, customers.length),
           customers: customers.map((c) => ({
             customer_number: c.CustomerNumber,
@@ -176,6 +185,7 @@ Args:
 Returns:
   Complete customer details including contact info, addresses, payment terms, and VAT settings.`,
       inputSchema: GetCustomerSchema,
+      outputSchema: GetCustomerOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -190,7 +200,7 @@ Returns:
         );
         const customer = response.Customer;
 
-        const output = {
+        const output: GetCustomerOutput = {
           customer_number: customer.CustomerNumber,
           name: customer.Name,
           email: customer.Email || null,
@@ -261,6 +271,7 @@ Args:
 Returns:
   The created customer with assigned customer number.`,
       inputSchema: CreateCustomerSchema,
+      outputSchema: MutateCustomerOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -298,7 +309,7 @@ Returns:
         );
         const customer = response.Customer;
 
-        const output = {
+        const output: MutateCustomerOutput = {
           success: true,
           message: `Customer "${customer.Name}" created successfully`,
           customer_number: customer.CustomerNumber,
@@ -336,6 +347,7 @@ Args:
 Returns:
   The updated customer details.`,
       inputSchema: UpdateCustomerSchema,
+      outputSchema: MutateCustomerOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -370,7 +382,7 @@ Returns:
         );
         const customer = response.Customer;
 
-        const output = {
+        const output: MutateCustomerOutput = {
           success: true,
           message: `Customer "${customer.Name}" updated successfully`,
           customer_number: customer.CustomerNumber,
@@ -409,6 +421,7 @@ Args:
 Returns:
   Confirmation of deletion.`,
       inputSchema: DeleteCustomerSchema,
+      outputSchema: DeleteCustomerOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -423,7 +436,7 @@ Returns:
           "DELETE"
         );
 
-        const output = {
+        const output: DeleteCustomerOutput = {
           success: true,
           message: `Customer ${params.customer_number} deleted successfully`
         };
