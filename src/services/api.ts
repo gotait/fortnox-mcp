@@ -16,34 +16,70 @@ import {
   FETCH_ALL_DELAY_MS
 } from "../constants.js";
 
-// Rate limiting state
-let requestTimestamps: number[] = [];
+/**
+ * Rate limiting state, keyed by user.
+ *
+ * Fortnox applies its 25-requests-per-5-seconds limit per company token, not
+ * per app, so the window has to be per user. One shared window was wrong in
+ * both directions: a single tenant's burst queued every other tenant's calls in
+ * the same isolate, while the limit it enforced bore no relation to the one
+ * Fortnox actually applies.
+ *
+ * Still per isolate: several isolates each run their own window against the
+ * same token, so this smooths bursts rather than guaranteeing the ceiling. A
+ * hard global limit needs shared state (a Durable Object), which is only worth
+ * it if 429s actually show up in practice.
+ */
+const requestWindows = new Map<string, number[]>();
+
+/** Calls with no user context (local single-user mode) share one window. */
+const LOCAL_WINDOW = "__local__";
 
 /**
- * Simple rate limiter for Fortnox API (25 requests per 5 seconds)
+ * Reserve a slot in this user's window, waiting for one when it is full.
+ *
+ * The check and the push happen in one synchronous step, so two concurrent
+ * calls cannot both claim the last slot. The previous version read the length,
+ * awaited, and only then pushed, which let a burst through the limit.
  */
-async function waitForRateLimit(): Promise<void> {
-  const now = Date.now();
+async function waitForRateLimit(userId: string | undefined): Promise<void> {
+  const key = userId ?? LOCAL_WINDOW;
 
-  // Remove timestamps outside the window
-  requestTimestamps = requestTimestamps.filter(
-    (ts) => now - ts < RATE_LIMIT_WINDOW_MS
-  );
+  for (;;) {
+    const now = Date.now();
+    const window = (requestWindows.get(key) ?? []).filter(
+      (ts) => now - ts < RATE_LIMIT_WINDOW_MS
+    );
 
-  // If at limit, wait for oldest request to expire
-  if (requestTimestamps.length >= RATE_LIMIT_REQUESTS) {
-    const oldestTimestamp = requestTimestamps[0];
-    const waitTime = RATE_LIMIT_WINDOW_MS - (now - oldestTimestamp) + 50; // +50ms buffer
-    if (waitTime > 0) {
-      await new Promise((resolve) => setTimeout(resolve, waitTime));
+    if (window.length < RATE_LIMIT_REQUESTS) {
+      window.push(now);
+      requestWindows.set(key, window);
+      pruneExpiredWindows(now, key);
+      return;
     }
-    // Clean up again after waiting
-    requestTimestamps = requestTimestamps.filter(
-      (ts) => Date.now() - ts < RATE_LIMIT_WINDOW_MS
+
+    requestWindows.set(key, window);
+    // +50ms so the oldest timestamp has certainly left the window on wake-up
+    await new Promise((resolve) =>
+      setTimeout(resolve, RATE_LIMIT_WINDOW_MS - (now - window[0]) + 50)
     );
   }
+}
 
-  requestTimestamps.push(Date.now());
+/**
+ * Drop other users' windows once they have fully expired.
+ *
+ * An isolate serves many tenants over its lifetime; without this the map would
+ * hold an array per user id it ever saw.
+ */
+function pruneExpiredWindows(now: number, keep: string): void {
+  for (const [key, window] of requestWindows) {
+    if (key === keep) continue;
+    const newest = window[window.length - 1];
+    if (newest === undefined || now - newest >= RATE_LIMIT_WINDOW_MS) {
+      requestWindows.delete(key);
+    }
+  }
 }
 
 /**
@@ -56,13 +92,13 @@ export async function fortnoxRequest<T>(
   data?: unknown,
   params?: Record<string, string | number | boolean | undefined>
 ): Promise<T> {
-  await waitForRateLimit();
-
-  // Get access token using the token provider
-  // In local mode, userId is undefined and ignored
-  // In remote mode, userId comes from the request context
-  const tokenProvider = getTokenProvider();
+  // In local mode userId is undefined and ignored; in remote mode it comes from
+  // the request context, and it is also what scopes the rate-limit window.
   const userId = getCurrentUserId();
+
+  await waitForRateLimit(userId);
+
+  const tokenProvider = getTokenProvider();
   const accessToken = await tokenProvider.getAccessToken(userId);
 
   // Clean undefined params

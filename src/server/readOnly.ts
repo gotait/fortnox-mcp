@@ -3,10 +3,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 /**
  * Read-only deployment mode.
  *
- * When FORTNOX_READ_ONLY=true, only tools annotated with readOnlyHint: true
- * are registered. Write tools (create/update/delete/approve/bookkeep/cancel/
- * credit/send-email) are never exposed to the client, which lets operators
- * run a read-only deployment separately from a write-capable one.
+ * When active, only tools annotated with readOnlyHint: true are registered.
+ * Write tools (create/update/delete/approve/bookkeep/cancel/credit/send-email)
+ * are never exposed to the client.
+ *
+ * Two things can turn it on: FORTNOX_READ_ONLY=true, which forces it for the
+ * whole deployment, or a user choosing read-only when they authorize. The
+ * Worker builds a server per request, so the per-grant choice costs nothing
+ * beyond the registration it already does.
  */
 
 /**
@@ -23,7 +27,7 @@ export function isReadOnlyMode(): boolean {
  * Must be applied before the register*Tools() calls so the filter covers
  * every tool, including tools added in the future.
  */
-export function applyReadOnlyMode(server: McpServer): void {
+export function applyReadOnlyMode(server: McpServer, reason = "FORTNOX_READ_ONLY=true"): void {
   const originalRegisterTool = server.registerTool.bind(server);
 
   // registerTool is generic over the tool's input/output schemas. The wrapper
@@ -41,6 +45,6 @@ export function applyReadOnlyMode(server: McpServer): void {
   }) as unknown as typeof server.registerTool;
 
   console.error(
-    "[FortnoxMCP] Read-only mode active (FORTNOX_READ_ONLY=true): write tools will not be registered"
+    `[FortnoxMCP] Read-only mode active (${reason}): write tools will not be registered`
   );
 }

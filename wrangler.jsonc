@@ -28,8 +28,11 @@
   // without one from the dashboard (Workers > fortnox-mcp > Settings >
   // Variables) or with `wrangler deploy --var NAME:value`.
   "vars": {
-    // "true"  -> only the 34 read-only tools are registered
-    // "false" -> all 51, including create/update/delete/approve/bookkeep
+    // Ceiling, not the whole answer. Each user now picks read-only or
+    // read-write when they authorize, and the choice rides on their grant.
+    //   "true"  -> forces read-only for everyone; the question is not asked
+    //   "false" -> the user chooses; read-only is the recommended default,
+    //              and any grant without an explicit choice reads as read-only
     "FORTNOX_READ_ONLY": "true",
 
     // Scopes requested from Fortnox, space- or comma-separated. Must be a
@@ -44,6 +47,9 @@
   // dashboard and committed to git:
   //   npx wrangler secret put FORTNOX_CLIENT_ID
   //   npx wrangler secret put FORTNOX_CLIENT_SECRET
+  //
+  // Optional: SUPPORT_EMAIL. When set, the authorization error pages offer it
+  // as the address to write to; when unset they simply omit that line.
 
   "observability": {
     "enabled": true

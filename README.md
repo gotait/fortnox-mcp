@@ -468,8 +468,28 @@ Everything is driven by the environment. Secrets go through
 |----------|------|---------|-------------|
 | `FORTNOX_CLIENT_ID` | secret | — | Fortnox app client ID |
 | `FORTNOX_CLIENT_SECRET` | secret | — | Fortnox app client secret |
-| `FORTNOX_READ_ONLY` | var | `"true"` | `"true"` registers only the 34 read tools; `"false"` exposes all 51, including create/update/delete/approve/bookkeep/cancel/credit/send-email |
+| `FORTNOX_READ_ONLY` | var | `"true"` | Ceiling on the tool surface. `"true"` forces read-only for every user and skips the question at login; `"false"` lets each user choose when they authorize |
 | `FORTNOX_SCOPES` | var | the ten below | Scopes requested from Fortnox, space- or comma-separated. Must be a subset of what the app grants |
+| `SUPPORT_EMAIL` | var | — | Optional. Shown on the authorization error pages as the address to write to |
+
+### Access level is chosen per user
+
+With `FORTNOX_READ_ONLY` unset or `"false"`, the authorization flow asks each
+user whether the app should get read-only or read-write access before sending
+them to Fortnox. The answer is stored on their OAuth grant, and the Worker
+builds its tool surface per request from that grant - so one deployment serves a
+customer who only wants reads (34 tools) alongside one who wants writes (51)
+without either affecting the other.
+
+Read-only is the recommended option on that screen, and it is also the
+fallback: a grant carrying no explicit choice - one issued before this existed,
+or any request where the flag is missing - is treated as read-only rather than
+assumed to be write-capable. Setting `FORTNOX_READ_ONLY=true` overrides the
+choice for everyone, including grants that already chose writes.
+
+Fortnox scopes are per endpoint family and do not separate reads from writes, so
+this is enforced by which tools get registered, not by Fortnox. A deployment
+that must not be able to write at all needs a Fortnox app with narrower scopes.
 
 Default scopes - one per endpoint family the tools call, matching
 `FORTNOX_SCOPES` in `src/auth/credentials.ts`:

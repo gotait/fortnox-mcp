@@ -32,7 +32,7 @@ import { fortnoxAuthHandler } from "./fortnoxAuthHandler.js";
 import {
   getConfiguredCredentials,
   getRequestedScopes,
-  isReadOnly,
+  readOnlyIsForced,
   type Env,
   type FortnoxProps,
 } from "./env.js";
@@ -62,13 +62,19 @@ function tokenProviderFor(env: Env): DatabaseTokenProvider | null {
  * @param baseUrl - This request's origin, so the advertised icon URL points at
  *   the host the client actually reached, whether that is workers.dev or a
  *   custom domain.
+ * @param readOnly - This grant's access level, decided when the user authorized.
+ *   The server is built per request, so two clients on the same deployment can
+ *   see different tool surfaces.
  */
-function buildServer(env: Env, baseUrl: string): McpServer {
+function buildServer(env: Env, baseUrl: string, readOnly: boolean): McpServer {
   const server = new McpServer(serverInfo(baseUrl));
 
   // Must run before registration so the filter covers every tool.
-  if (isReadOnly(env)) {
-    applyReadOnlyMode(server);
+  if (readOnly) {
+    applyReadOnlyMode(
+      server,
+      readOnlyIsForced(env) ? "FORTNOX_READ_ONLY=true" : "chosen at authorization"
+    );
   }
 
   registerAllTools(server);
@@ -83,7 +89,8 @@ function buildServer(env: Env, baseUrl: string): McpServer {
  */
 export class FortnoxMcpHandler extends WorkerEntrypoint<Env, FortnoxProps> {
   async fetch(request: Request): Promise<Response> {
-    const userId = this.ctx.props?.userId;
+    const props = this.ctx.props;
+    const userId = props?.userId;
 
     if (!userId) {
       return Response.json(
@@ -109,7 +116,12 @@ export class FortnoxMcpHandler extends WorkerEntrypoint<Env, FortnoxProps> {
 
     initializeTokenProvider(provider);
 
-    const server = buildServer(this.env, new URL(request.url).origin);
+    // Only an explicit `false` means write access. A grant issued before the
+    // access-level choice existed carries no flag, and is read as read-only
+    // rather than assumed to be write-capable; the env ceiling still wins.
+    const readOnly = props?.readOnly !== false || readOnlyIsForced(this.env);
+
+    const server = buildServer(this.env, new URL(request.url).origin, readOnly);
     const transport = new WebStandardStreamableHTTPServerTransport({
       // Stateless: no session id, and JSON responses rather than SSE streams,
       // which suits a Worker that does not hold connections open.

@@ -20,7 +20,11 @@ export interface Env {
   FORTNOX_CLIENT_ID: string;
   FORTNOX_CLIENT_SECRET: string;
 
-  /** When "true", only read-only tools are registered. */
+  /**
+   * When "true", the deployment forces read-only for everyone and the login
+   * flow offers no choice. Otherwise each user picks read-only or read-write
+   * when they authorize, and the choice is carried on their grant.
+   */
   FORTNOX_READ_ONLY?: string;
 
   /**
@@ -29,10 +33,22 @@ export interface Env {
    * requesting a scope the app does not have fails the whole authorization.
    */
   FORTNOX_SCOPES?: string;
+
+  /**
+   * Support address shown on the authorization error pages. Optional — the
+   * pages simply omit the "contact us" line when it is unset, rather than
+   * printing an address nobody reads.
+   */
+  SUPPORT_EMAIL?: string;
 }
 
-/** True when the deployment should expose only read-only tools. */
-export function isReadOnly(env: Env): boolean {
+/**
+ * True when the deployment forces read-only regardless of what a user chose.
+ *
+ * This is a ceiling, not the whole answer: with it unset, the tool surface comes
+ * from the per-grant choice made at authorization (see FortnoxProps.readOnly).
+ */
+export function readOnlyIsForced(env: Env): boolean {
   return env.FORTNOX_READ_ONLY === "true";
 }
 
@@ -69,5 +85,11 @@ export function getConfiguredCredentials(
 export interface FortnoxProps {
   /** Key into FORTNOX_TOKENS for this grant's Fortnox credentials. */
   userId: string;
+  /**
+   * Whether this grant is limited to read-only tools, chosen by the user at
+   * authorization. Optional because grants issued before the choice existed
+   * carry no flag; absent is treated as read-only rather than as write access.
+   */
+  readOnly?: boolean;
   [key: string]: unknown;
 }

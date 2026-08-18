@@ -5,8 +5,13 @@
  * library is the OAuth *server* the MCP client talks to, and this handler is
  * the OAuth *client* that talks to Fortnox. Two legs:
  *
- *   /authorize                 MCP client arrives -> redirect to Fortnox
+ *   /authorize                 MCP client arrives -> ask for an access level
+ *   /authorize/mode            user picks -> redirect to Fortnox
  *   /oauth/fortnox/callback    Fortnox returns -> mint a grant, redirect back
+ *
+ * The access level is chosen here rather than set per deployment, so one host
+ * can serve a customer who only wants reads alongside one who wants writes.
+ * FORTNOX_READ_ONLY=true still forces read-only and skips the question.
  *
  * The MCP client never sees a Fortnox token. It receives a token minted by the
  * OAuth library, whose props carry only the user id used to look the Fortnox
@@ -22,8 +27,16 @@ import { DatabaseTokenProvider } from "../auth/databaseProvider.js";
 import { KVTokenStorage } from "../auth/storage/kv.js";
 import { ICON_MIME_TYPE, ICON_PATH, iconPngBytes } from "../server/icon.js";
 import {
+  MODE_PATH,
+  accessLevelPage,
+  errorPage,
+  fortnoxCallbackGuidance,
+  type ErrorGuidance,
+} from "./pages.js";
+import {
   getConfiguredCredentials,
   getRequestedScopes,
+  readOnlyIsForced,
   type Env,
 } from "./env.js";
 
@@ -45,6 +58,11 @@ const PENDING_PREFIX = "pending_auth:";
 interface PendingAuthorization {
   authRequest: AuthRequest;
   createdAt: number;
+  /**
+   * The access level the user picked, recorded before they leave for Fortnox.
+   * Absent until they pick, and read as read-only if it somehow stays absent.
+   */
+  readOnly?: boolean;
 }
 
 /** Thrown when the Worker's Fortnox secrets have not been configured. */
@@ -67,11 +85,51 @@ function callbackUri(request: Request): string {
   return new URL(FORTNOX_CALLBACK_PATH, new URL(request.url).origin).toString();
 }
 
-function errorResponse(message: string, status: number): Response {
-  return new Response(message, {
-    status,
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
+/** Where the user goes once the access level is settled. */
+function fortnoxAuthorizationUrl(request: Request, env: Env, state: string): string {
+  return tokenProviderFor(env).getAuthorizationUrl(
+    callbackUri(request),
+    getRequestedScopes(env),
+    state
+  );
+}
+
+function pendingKeyFor(state: string): string {
+  return `${PENDING_PREFIX}${state}`;
+}
+
+async function putPending(
+  env: Env,
+  state: string,
+  pending: PendingAuthorization
+): Promise<void> {
+  await env.FORTNOX_TOKENS.put(pendingKeyFor(state), JSON.stringify(pending), {
+    expirationTtl: PENDING_AUTH_TTL_SECONDS,
   });
+}
+
+async function getPending(
+  env: Env,
+  state: string
+): Promise<PendingAuthorization | null> {
+  return (await env.FORTNOX_TOKENS.get(pendingKeyFor(state), {
+    type: "json",
+  })) as PendingAuthorization | null;
+}
+
+/**
+ * Render a failure to the browser.
+ *
+ * Everything that reaches this point is being read by a person part-way through
+ * connecting their accounting system, so each case says what happened and what
+ * they can do about it rather than returning a bare status line.
+ */
+function errorResponse(
+  env: Env,
+  guidance: ErrorGuidance,
+  technical?: string
+): Response {
+  return errorPage(guidance, technical, env.SUPPORT_EMAIL);
 }
 
 /**
@@ -81,9 +139,19 @@ function errorResponse(message: string, status: number): Response {
  * An unvalidated redirect target is an open redirect, so `error.redirectUri`
  * being absent is the signal to keep the response here.
  */
-function authorizationErrorResponse(error: AuthorizationError): Response {
+function authorizationErrorResponse(env: Env, error: AuthorizationError): Response {
   if (!error.redirectUri) {
-    return errorResponse(error.description, 400);
+    return errorResponse(
+      env,
+      {
+        title: "Anslutningen kunde inte startas",
+        explanation:
+          "Appens begäran om åtkomst godtogs inte, så vi kom aldrig vidare till Fortnox.",
+        steps: ["Starta anslutningen på nytt från appen."],
+        status: 400,
+      },
+      `${error.code}: ${error.description}`
+    );
   }
 
   const redirect = new URL(error.redirectUri);
@@ -101,36 +169,90 @@ async function handleAuthorize(request: Request, env: Env): Promise<Response> {
     authRequest = await env.OAUTH_PROVIDER.parseAuthRequest(request);
   } catch (error) {
     if (error instanceof AuthorizationError) {
-      return authorizationErrorResponse(error);
+      return authorizationErrorResponse(env, error);
     }
     throw error;
   }
 
   const client = await env.OAUTH_PROVIDER.lookupClient(authRequest.clientId);
   if (!client) {
-    return errorResponse("Unknown OAuth client", 400);
+    return errorResponse(env, {
+      title: "Appen är inte registrerad här",
+      explanation:
+        "Anslutningen kom från en app som den här servern inte känner igen, så vi kan inte fortsätta.",
+      steps: ["Starta anslutningen på nytt från appen."],
+      status: 400,
+    });
   }
 
   // Single-use nonce tying the Fortnox round trip back to this request.
   const state = crypto.randomUUID();
-  const pending: PendingAuthorization = {
+  const forced = readOnlyIsForced(env);
+
+  await putPending(env, state, {
     authRequest,
     createdAt: Date.now(),
-  };
+    // Recorded up front when the deployment forces read-only; otherwise the
+    // /authorize/mode POST fills it in from what the user picked.
+    ...(forced ? { readOnly: true } : {}),
+  });
 
-  await env.FORTNOX_TOKENS.put(
-    `${PENDING_PREFIX}${state}`,
-    JSON.stringify(pending),
-    { expirationTtl: PENDING_AUTH_TTL_SECONDS }
-  );
+  // Nothing to ask when the answer is fixed — go straight to Fortnox.
+  if (forced) {
+    return Response.redirect(fortnoxAuthorizationUrl(request, env, state), 302);
+  }
 
-  const authorizationUrl = tokenProviderFor(env).getAuthorizationUrl(
-    callbackUri(request),
-    getRequestedScopes(env),
-    state
-  );
+  return accessLevelPage(state, client.clientName);
+}
 
-  return Response.redirect(authorizationUrl, 302);
+/** POST /authorize/mode - record the access level, then hand off to Fortnox. */
+async function handleModeSelection(request: Request, env: Env): Promise<Response> {
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return errorResponse(env, {
+      title: "Valet kunde inte läsas",
+      explanation: "Formuläret med åtkomstnivån gick inte att tolka.",
+      steps: ["Starta anslutningen på nytt från appen."],
+      status: 400,
+    });
+  }
+
+  const state = form.get("state");
+  if (typeof state !== "string" || !state) {
+    return errorResponse(env, {
+      title: "Valet kunde inte kopplas till din anslutning",
+      explanation:
+        "Formuläret saknade den referens som binder ditt val till pågående anslutning.",
+      steps: ["Starta anslutningen på nytt från appen."],
+      status: 400,
+    });
+  }
+
+  // The pending record is the only proof this state belongs to a real
+  // authorization; a forged or expired one gets no further.
+  const pending = await getPending(env, state);
+  if (!pending) {
+    return errorResponse(env, {
+      title: "Anslutningen tog för lång tid",
+      explanation:
+        "Förfrågan har gått ut eller är redan använd. Av säkerhetsskäl gäller den i tio minuter " +
+        "och bara en gång.",
+      steps: ["Starta anslutningen på nytt från appen."],
+      status: 400,
+    });
+  }
+
+  // Only an explicit choice of full access grants it. A missing, unexpected or
+  // tampered value lands on read-only.
+  const readOnly = form.get("mode") !== "full";
+
+  // Re-put rather than mutate: KV holds JSON, and this also refreshes the TTL
+  // so the Fortnox leg gets its full window from the moment of the choice.
+  await putPending(env, state, { ...pending, readOnly: readOnly || readOnlyIsForced(env) });
+
+  return Response.redirect(fortnoxAuthorizationUrl(request, env, state), 302);
 }
 
 /** GET /oauth/fortnox/callback - exchange the code and complete the grant. */
@@ -142,28 +264,41 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
 
   if (error) {
     const description = url.searchParams.get("error_description") || error;
-    return errorResponse(`Fortnox authorization failed: ${description}`, 400);
+    const guidance = fortnoxCallbackGuidance(error, description);
+    console.error(`[OAuth] Fortnox returned ${error}: ${description}`);
+    return errorResponse(env, guidance, `${error}: ${description}`);
   }
 
   if (!code || !state) {
-    return errorResponse("Missing code or state parameter", 400);
+    return errorResponse(env, {
+      title: "Ofullständigt svar från Fortnox",
+      explanation:
+        "Fortnox skickade tillbaka dig utan de uppgifter som behövs för att slutföra anslutningen.",
+      steps: ["Starta anslutningen på nytt från appen."],
+      status: 400,
+    });
   }
 
-  const pendingKey = `${PENDING_PREFIX}${state}`;
-  const pending = (await env.FORTNOX_TOKENS.get(pendingKey, {
-    type: "json",
-  })) as PendingAuthorization | null;
+  const pending = await getPending(env, state);
 
   if (!pending) {
-    return errorResponse(
-      "Authorization request expired or already used. Please start again.",
-      400
-    );
+    return errorResponse(env, {
+      title: "Anslutningen tog för lång tid",
+      explanation:
+        "Förfrågan har gått ut eller är redan använd. Av säkerhetsskäl gäller den i tio minuter " +
+        "och bara en gång.",
+      steps: ["Starta anslutningen på nytt från appen."],
+      status: 400,
+    });
   }
 
   // Burn the nonce before doing any work, so a replayed callback cannot mint a
   // second grant from the same state.
-  await env.FORTNOX_TOKENS.delete(pendingKey);
+  await env.FORTNOX_TOKENS.delete(pendingKeyFor(state));
+
+  // A record that never went through /authorize/mode has no choice on it, so
+  // read-only is the reading. The env ceiling still overrides either way.
+  const readOnly = pending.readOnly !== false || readOnlyIsForced(env);
 
   // Opaque per-grant identity. Fortnox issues no stable user identifier here,
   // and the tokens are what actually scope access, so a fresh id per
@@ -182,15 +317,26 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
         ? exchangeError.message
         : String(exchangeError);
     console.error("[OAuth] Fortnox code exchange failed:", message);
-    return errorResponse("Failed to complete Fortnox authorization", 502);
+    return errorResponse(
+      env,
+      {
+        title: "Kunde inte slutföra anslutningen mot Fortnox",
+        explanation:
+          "Inloggningen gick igenom, men utbytet av behörigheten mot Fortnox misslyckades. Ingen " +
+          "åtkomst har sparats.",
+        steps: ["Försök ansluta igen om en liten stund."],
+        status: 502,
+      },
+      message
+    );
   }
 
   const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
     request: pending.authRequest,
     userId,
-    metadata: { provider: "fortnox" },
+    metadata: { provider: "fortnox", readOnly },
     scope: pending.authRequest.scope,
-    props: { userId },
+    props: { userId, readOnly },
   });
 
   return Response.redirect(redirectTo, 302);
@@ -205,18 +351,26 @@ export const fortnoxAuthHandler: ExportedHandler<Env> = {
         return await handleAuthorize(request, env);
       }
 
+      if (request.method === "POST" && url.pathname === MODE_PATH) {
+        return await handleModeSelection(request, env);
+      }
+
       if (request.method === "GET" && url.pathname === FORTNOX_CALLBACK_PATH) {
         return await handleCallback(request, env);
       }
     } catch (error) {
       if (error instanceof NotConfiguredError) {
         console.error(`[OAuth] Not configured: ${error.message}`);
-        return errorResponse(
-          "This server is not configured yet: the Fortnox app credentials are " +
-            "missing. Set them with `wrangler secret put FORTNOX_CLIENT_ID` " +
-            "and `wrangler secret put FORTNOX_CLIENT_SECRET`.",
-          503
-        );
+        return errorResponse(env, {
+          title: "Servern är inte färdigkonfigurerad",
+          explanation:
+            "Fortnox-appens uppgifter saknas på den här servern, så ingen anslutning kan göras än.",
+          footnote:
+            "Till dig som driftar servern: sätt hemligheterna med " +
+            "<code>wrangler secret put FORTNOX_CLIENT_ID</code> och " +
+            "<code>wrangler secret put FORTNOX_CLIENT_SECRET</code>.",
+          status: 503,
+        });
       }
       throw error;
     }
@@ -240,6 +394,10 @@ export const fortnoxAuthHandler: ExportedHandler<Env> = {
       });
     }
 
-    return errorResponse("Not found", 404);
+    return errorResponse(env, {
+      title: "Sidan finns inte",
+      explanation: "Den här adressen hör inte till anslutningsflödet.",
+      status: 404,
+    });
   },
 };
