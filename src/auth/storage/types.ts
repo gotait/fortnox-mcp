@@ -30,6 +30,23 @@ export interface ITokenStorage {
    * @param userId - Unique user identifier
    */
   exists(userId: string): Promise<boolean>;
+
+  /**
+   * Whether a `get` is guaranteed to observe the most recent `set`, including
+   * one made by another process or region.
+   *
+   * DatabaseTokenProvider guards its cleanup of a rejected refresh token by
+   * re-reading the record: a refresh token that no longer matches means someone
+   * else already rotated it, so the rejection was a lost race and the stored
+   * credential must be kept. That guard is only meaningful when reads are
+   * immediately consistent - on an eventually consistent store the stale read
+   * returns the very record that was just replaced, the guard passes, and the
+   * fresh credential is destroyed. Backends that cannot promise this set it to
+   * false, and the provider keeps the record instead of deleting it.
+   *
+   * Omitted means true, which holds for in-process and transactional stores.
+   */
+  readonly readsAreImmediatelyConsistent?: boolean;
 }
 
 /**

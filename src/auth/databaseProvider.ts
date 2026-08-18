@@ -173,6 +173,15 @@ export class DatabaseTokenProvider implements ITokenProvider {
     userId: string,
     rejectedRefreshToken: string
   ): Promise<void> {
+    // The re-read below is the whole safety mechanism, and it is worthless on an
+    // eventually consistent store: a stale read returns the record that was
+    // just replaced, so the guard passes and the delete destroys the working
+    // credential it was meant to protect. Keep the record there; the user
+    // re-authorizing overwrites it.
+    if (this.storage.readsAreImmediatelyConsistent === false) {
+      return;
+    }
+
     try {
       const current = await this.storage.get(userId);
       if (current && current.refreshToken !== rejectedRefreshToken) {

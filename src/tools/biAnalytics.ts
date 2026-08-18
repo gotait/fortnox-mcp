@@ -23,6 +23,7 @@ import {
 import {
   aggregateByDimension,
   groupByTimePeriod,
+  getTimeBucketKey,
   calculateGrowth,
   sumBy,
   countUnique,
@@ -295,15 +296,26 @@ Error Handling:
         if (params.include_overdue && buckets.length > 0) {
           const firstBucket = buckets[0];
 
+          // groupByTimePeriod has already bucketed every item by due date, so
+          // an overdue item whose own bucket is the first one is already
+          // counted there. Only the ones that landed in an earlier bucket -
+          // outside the forecast window - need moving, otherwise the first
+          // period's inflows are double-counted and stop agreeing with
+          // summary.total_receivables.
+          const isOverdueOutsideWindow = (dueDate: string | undefined): boolean =>
+            !!dueDate &&
+            dueDate < today &&
+            getTimeBucketKey(dueDate, params.group_by) !== firstBucket;
+
           // Move overdue receivables to first bucket
-          const overdueReceivables = receivables.filter(inv => inv.DueDate && inv.DueDate < today);
+          const overdueReceivables = receivables.filter(inv => isOverdueOutsideWindow(inv.DueDate));
           if (overdueReceivables.length > 0) {
             const existing = receivablesByPeriod.get(firstBucket) || [];
             receivablesByPeriod.set(firstBucket, [...existing, ...overdueReceivables]);
           }
 
           // Move overdue payables to first bucket
-          const overduePayables = payables.filter(inv => inv.DueDate && inv.DueDate < today);
+          const overduePayables = payables.filter(inv => isOverdueOutsideWindow(inv.DueDate));
           if (overduePayables.length > 0) {
             const existing = payablesByPeriod.get(firstBucket) || [];
             payablesByPeriod.set(firstBucket, [...existing, ...overduePayables]);

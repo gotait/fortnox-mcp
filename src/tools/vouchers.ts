@@ -94,18 +94,17 @@ Retrieves a paginated list of vouchers with optional filtering.
 IMPORTANT: The financial_year parameter uses Fortnox sequential IDs (1, 2, 3...), NOT calendar years.
 Use fortnox_list_financial_years first to find the correct ID for your target year.
 
-Note: The Fortnox API does not support date filtering on the vouchers list, so
-from_date/to_date are applied client-side on TransactionDate. When a date filter
-is given, all vouchers (up to safety caps) are fetched first, then filtered and
-paginated.
+Note: from_date/to_date select on the transaction date and are applied by
+Fortnox (the global fromdate/todate parameters, which it documents as available
+for vouchers).
 
 Args:
   - limit (number): Max results per page, 1-100 (default: 20)
   - page (number): Page number for pagination (default: 1)
   - voucher_series (string): Filter by voucher series (e.g., 'A', 'B')
   - financial_year (number): Fortnox financial year ID (use fortnox_list_financial_years to find)
-  - from_date (string): Filter vouchers from this date (YYYY-MM-DD, applied client-side)
-  - to_date (string): Filter vouchers to this date (YYYY-MM-DD, applied client-side)
+  - from_date (string): Filter vouchers from this date (YYYY-MM-DD, server-side)
+  - to_date (string): Filter vouchers to this date (YYYY-MM-DD, server-side)
   - response_format ('markdown' | 'json'): Output format
 
 Returns:
@@ -132,47 +131,23 @@ Examples:
           endpoint = `/3/vouchers/sublist/${encodeURIComponent(params.voucher_series)}`;
         }
 
-        // The vouchers list endpoints only support the financialyear query
-        // parameter - fromdate/todate are silently ignored by Fortnox, so
-        // date filtering is applied client-side on TransactionDate.
-        let vouchers: FortnoxVoucherListItem[];
-        let total: number;
-        let truncated = false;
-        let truncationReason: string | undefined;
+        // Dates go to Fortnox as the global fromdate/todate parameters, which it
+        // documents for vouchers (its OpenAPI spec lists them only on
+        // invoices/orders/offers, but the spec omits every global parameter -
+        // limit and page included). Filtering server-side keeps this one
+        // request instead of a full walk of the financial year.
+        const queryParams: Record<string, string | number | boolean | undefined> = {
+          limit: params.limit,
+          page: params.page,
+          financialyear: params.financial_year
+        };
 
-        if (params.from_date || params.to_date) {
-          // The API cannot pre-filter by date, so fetch all vouchers (up to
-          // the safety caps), filter client-side, then paginate the filtered
-          // set.
-          const result = await fetchAllPages<FortnoxVoucherListItem, VoucherListResponse>(
-            endpoint,
-            { financialyear: params.financial_year },
-            (r) => r.Vouchers || [],
-            (r) => r.MetaInformation?.["@TotalResources"] || 0
-          );
+        if (params.from_date) queryParams.fromdate = params.from_date;
+        if (params.to_date) queryParams.todate = params.to_date;
 
-          const filtered = result.items.filter((v) =>
-            (!params.from_date || v.TransactionDate >= params.from_date) &&
-            (!params.to_date || v.TransactionDate <= params.to_date)
-          );
-
-          total = filtered.length;
-          truncated = result.truncated;
-          truncationReason = result.truncationReason;
-
-          const start = (params.page - 1) * params.limit;
-          vouchers = filtered.slice(start, start + params.limit);
-        } else {
-          const queryParams: Record<string, string | number | boolean | undefined> = {
-            limit: params.limit,
-            page: params.page,
-            financialyear: params.financial_year
-          };
-
-          const response = await fortnoxRequest<VoucherListResponse>(endpoint, "GET", undefined, queryParams);
-          vouchers = response.Vouchers || [];
-          total = response.MetaInformation?.["@TotalResources"] || vouchers.length;
-        }
+        const response = await fortnoxRequest<VoucherListResponse>(endpoint, "GET", undefined, queryParams);
+        const vouchers = response.Vouchers || [];
+        const total = response.MetaInformation?.["@TotalResources"] || vouchers.length;
 
         const output: Record<string, unknown> = {
           ...buildPaginationMeta(total, params.page, params.limit, vouchers.length),
@@ -183,11 +158,6 @@ Examples:
             transaction_date: v.TransactionDate
           }))
         };
-
-        if (truncated) {
-          output.truncated = true;
-          output.truncation_reason = truncationReason;
-        }
 
         let textContent: string;
         if (params.response_format === ResponseFormat.JSON) {
@@ -201,10 +171,6 @@ Examples:
             params.limit,
             (v) => `- **${v.VoucherSeries}${v.VoucherNumber}** (${formatDisplayDate(v.TransactionDate)}): ${sanitizeInline(v.Description)}`
           );
-
-          if (truncated && truncationReason) {
-            textContent += `\n\n⚠️ **Note**: ${truncationReason}`;
-          }
         }
 
         return buildToolResponse(textContent, output);
@@ -500,19 +466,19 @@ Common use cases:
 - Bank transactions: account_number=1930
 - Revenue analysis: account_range={ from: 3000, to: 3999 }
 
-Note: This tool filters client-side since the Fortnox API supports neither account
-nor date filtering on vouchers. The voucher list is filtered by transaction date
-first, then details are fetched for up to max_vouchers of the date-filtered
-vouchers and matched against the account criteria. Use date ranges to limit the scan.
+Note: Fortnox has no account filter on vouchers, so the account criteria are
+matched here: the date range narrows the voucher list server-side, then details
+are fetched for up to max_vouchers of those vouchers and matched against the
+account criteria. Use date ranges to limit the scan.
 
 Args:
   - account_number (number): Single account number to filter by (1000-9999)
   - account_numbers (array): Multiple account numbers to filter by (max 20)
   - account_range (object): Account range { from: 3000, to: 3999 }
   - financial_year (number): Fortnox financial year ID (use fortnox_list_financial_years to find)
-  - period ('today' | ... | 'last_year'): Convenience date period filter (applied client-side)
-  - from_date (string): Filter vouchers from this date (YYYY-MM-DD, applied client-side)
-  - to_date (string): Filter vouchers to this date (YYYY-MM-DD, applied client-side)
+  - period ('today' | ... | 'last_year'): Convenience date period filter (server-side)
+  - from_date (string): Filter vouchers from this date (YYYY-MM-DD, server-side)
+  - to_date (string): Filter vouchers to this date (YYYY-MM-DD, server-side)
   - voucher_series (string): Filter by voucher series (e.g., 'A')
   - include_summary (boolean): Include totals per account (default: true)
   - max_vouchers (number): Max vouchers to scan, 10-500 (default: 500)
@@ -551,9 +517,9 @@ Examples:
           accountRangeTo = params.account_range.to;
         }
 
-        // Build query params. The vouchers list endpoints only support the
-        // financialyear query parameter - fromdate/todate are silently
-        // ignored by Fortnox, so dates are filtered client-side below.
+        // Build query params. Dates go to Fortnox as the global fromdate/todate
+        // parameters, which it documents as available for vouchers, so the range
+        // narrows the fetch instead of being filtered out of a whole year.
         const queryParams: Record<string, string | number | boolean | undefined> = {
           financialyear: params.financial_year
         };
@@ -575,7 +541,8 @@ Examples:
             dateRangeDescription = `${fromDate || "start"} to ${toDate || "end"}`;
           }
         }
-        const hasDateFilter = fromDate !== undefined || toDate !== undefined;
+        if (fromDate !== undefined) queryParams.fromdate = fromDate;
+        if (toDate !== undefined) queryParams.todate = toDate;
 
         // Determine endpoint based on series filter
         let endpoint = "/3/vouchers";
@@ -583,37 +550,32 @@ Examples:
           endpoint = `/3/vouchers/sublist/${encodeURIComponent(params.voucher_series)}`;
         }
 
-        // Fetch voucher list. With a date filter the max_vouchers cap must
-        // apply to the date-filtered set, so fetch the full list (up to the
-        // safety caps) and filter before capping; otherwise cap the fetch
-        // directly.
+        // Fortnox has applied the date range already, so max_vouchers caps the
+        // fetch itself. Leaving it uncapped meant a date-filtered call walked up
+        // to MAX_FETCH_ALL_PAGES pages of the financial year, and on a ledger
+        // larger than MAX_FETCH_ALL_RESULTS the figures were computed from an
+        // arbitrary first slice of it.
         const result = await fetchAllPages<FortnoxVoucherListItem, VoucherListResponse>(
           endpoint,
           queryParams,
           (r) => r.Vouchers || [],
           (r) => r.MetaInformation?.["@TotalResources"] || 0,
-          hasDateFilter
-            ? undefined
-            : { maxResults: params.max_vouchers, maxPages: Math.ceil(params.max_vouchers / 100) }
+          { maxResults: params.max_vouchers, maxPages: Math.ceil(params.max_vouchers / 100) }
         );
 
-        // Filter the list by transaction date BEFORE selecting which
-        // vouchers to fetch details for, so max_vouchers applies to the
-        // date-filtered set
-        let voucherList = result.items;
-        let listTruncated = result.truncated;
-        let listTruncationReason = result.truncationReason;
-        if (hasDateFilter) {
-          voucherList = voucherList.filter((v) =>
-            (!fromDate || v.TransactionDate >= fromDate) &&
-            (!toDate || v.TransactionDate <= toDate)
-          );
-          if (voucherList.length > params.max_vouchers) {
-            voucherList = voucherList.slice(0, params.max_vouchers);
-            listTruncated = true;
-            listTruncationReason = `Reached maximum result limit (${params.max_vouchers} vouchers in the date range). Increase max_vouchers or narrow the date range.`;
-          }
-        }
+        // Belt and braces: Fortnox applies the range, but if an API version ever
+        // ignored fromdate/todate the debit/credit figures below would silently
+        // cover the whole financial year. Dropping anything outside the range
+        // costs nothing here - unlike fortnox_list_vouchers, this report is not a
+        // paginated passthrough, so post-filtering cannot skew a page count.
+        const voucherList = (fromDate || toDate)
+          ? result.items.filter((v) =>
+              (!fromDate || v.TransactionDate >= fromDate) &&
+              (!toDate || v.TransactionDate <= toDate)
+            )
+          : result.items;
+        const listTruncated = result.truncated;
+        const listTruncationReason = result.truncationReason;
 
         const totalVouchers = result.total;
 
@@ -818,16 +780,17 @@ Examples:
 IMPORTANT: The financial_year parameter uses Fortnox sequential IDs (1, 2, 3...), NOT calendar years.
 Use fortnox_list_financial_years first to find the correct ID for your target year.
 
-Performs client-side text search across voucher descriptions. Date filtering
-(period/from_date/to_date) is also applied client-side on the voucher list, since
-the Fortnox API does not support date filtering on vouchers.
+Performs client-side text search across voucher descriptions - Fortnox has no
+text search on vouchers. Date filtering (period/from_date/to_date) is applied by
+Fortnox on the voucher list, so it narrows the scan rather than shrinking it
+afterwards.
 
 Args:
   - search_text (string): Text to search for in voucher descriptions (min 2 chars)
   - financial_year (number): Fortnox financial year ID (use fortnox_list_financial_years to find)
-  - period ('today' | ... | 'last_year'): Convenience date period filter (applied client-side)
-  - from_date (string): Filter vouchers from this date (YYYY-MM-DD, applied client-side)
-  - to_date (string): Filter vouchers to this date (YYYY-MM-DD, applied client-side)
+  - period ('today' | ... | 'last_year'): Convenience date period filter (server-side)
+  - from_date (string): Filter vouchers from this date (YYYY-MM-DD, server-side)
+  - to_date (string): Filter vouchers to this date (YYYY-MM-DD, server-side)
   - voucher_series (string): Filter by voucher series (e.g., 'A')
   - case_sensitive (boolean): Case-sensitive search (default: false)
   - include_rows (boolean): Also search row descriptions and include voucher row
@@ -853,9 +816,9 @@ Examples:
     },
     async (params: SearchVouchersInput) => {
       try {
-        // Build query params. The vouchers list endpoints only support the
-        // financialyear query parameter - fromdate/todate are silently
-        // ignored by Fortnox, so dates are filtered client-side below.
+        // Build query params. Dates go to Fortnox as the global fromdate/todate
+        // parameters, which it documents as available for vouchers, so the range
+        // narrows the fetch instead of being filtered out of a whole year.
         const queryParams: Record<string, string | number | boolean | undefined> = {
           financialyear: params.financial_year
         };
@@ -877,7 +840,8 @@ Examples:
             dateRangeDescription = `${fromDate || "start"} to ${toDate || "end"}`;
           }
         }
-        const hasDateFilter = fromDate !== undefined || toDate !== undefined;
+        if (fromDate !== undefined) queryParams.fromdate = fromDate;
+        if (toDate !== undefined) queryParams.todate = toDate;
 
         // Determine endpoint based on series filter
         let endpoint = "/3/vouchers";
@@ -885,37 +849,32 @@ Examples:
           endpoint = `/3/vouchers/sublist/${encodeURIComponent(params.voucher_series)}`;
         }
 
-        // Fetch voucher list. With a date filter the max_vouchers cap must
-        // apply to the date-filtered set, so fetch the full list (up to the
-        // safety caps) and filter before capping; otherwise cap the fetch
-        // directly.
+        // Fortnox has applied the date range already, so max_vouchers caps the
+        // fetch itself. Leaving it uncapped meant a date-filtered call walked up
+        // to MAX_FETCH_ALL_PAGES pages of the financial year, and on a ledger
+        // larger than MAX_FETCH_ALL_RESULTS the figures were computed from an
+        // arbitrary first slice of it.
         const result = await fetchAllPages<FortnoxVoucherListItem, VoucherListResponse>(
           endpoint,
           queryParams,
           (r) => r.Vouchers || [],
           (r) => r.MetaInformation?.["@TotalResources"] || 0,
-          hasDateFilter
-            ? undefined
-            : { maxResults: params.max_vouchers, maxPages: Math.ceil(params.max_vouchers / 100) }
+          { maxResults: params.max_vouchers, maxPages: Math.ceil(params.max_vouchers / 100) }
         );
 
-        // Filter the list by transaction date BEFORE selecting which
-        // vouchers to search and fetch details for, so max_vouchers applies
-        // to the date-filtered set
-        let voucherList = result.items;
-        let listTruncated = result.truncated;
-        let listTruncationReason = result.truncationReason;
-        if (hasDateFilter) {
-          voucherList = voucherList.filter((v) =>
-            (!fromDate || v.TransactionDate >= fromDate) &&
-            (!toDate || v.TransactionDate <= toDate)
-          );
-          if (voucherList.length > params.max_vouchers) {
-            voucherList = voucherList.slice(0, params.max_vouchers);
-            listTruncated = true;
-            listTruncationReason = `Reached maximum result limit (${params.max_vouchers} vouchers in the date range). Increase max_vouchers or narrow the date range.`;
-          }
-        }
+        // Belt and braces: Fortnox applies the range, but if an API version ever
+        // ignored fromdate/todate the debit/credit figures below would silently
+        // cover the whole financial year. Dropping anything outside the range
+        // costs nothing here - unlike fortnox_list_vouchers, this report is not a
+        // paginated passthrough, so post-filtering cannot skew a page count.
+        const voucherList = (fromDate || toDate)
+          ? result.items.filter((v) =>
+              (!fromDate || v.TransactionDate >= fromDate) &&
+              (!toDate || v.TransactionDate <= toDate)
+            )
+          : result.items;
+        const listTruncated = result.truncated;
+        const listTruncationReason = result.truncationReason;
 
         const totalVouchers = result.total;
 

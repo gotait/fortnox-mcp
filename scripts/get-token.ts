@@ -18,6 +18,8 @@ import crypto from "crypto";
 import { URL } from "url";
 import readline from "readline";
 
+import { FORTNOX_SCOPES } from "../src/auth/credentials.js";
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -35,13 +37,10 @@ const REDIRECT_URI = `http://localhost:${REDIRECT_PORT}/callback`;
 const OAUTH_STATE = crypto.randomBytes(16).toString("hex");
 const AUTH_TIMEOUT_MS = 10 * 60 * 1000;
 
-const SCOPES = [
-  "customer",
-  "invoice",
-  "supplier",
-  "bookkeeping",
-  "companyinformation"
-];
+// The same set the server requests, so a token minted here can reach every
+// endpoint family the tools call. Duplicating the list here once left local
+// setups without the order/offer/project/costcenter/supplierinvoice scopes.
+const SCOPES = FORTNOX_SCOPES;
 
 async function getAuthorizationCode(): Promise<string> {
   return new Promise((resolve, reject) => {

@@ -131,10 +131,10 @@ Args:
   - limit (number): Max results per page, 1-100 (default: 20)
   - page (number): Page number for pagination (default: 1)
   - filter ('cancelled' | 'fullypaid' | 'unpaid' | 'unpaidoverdue' | 'unbooked' | 'pendingpayment' | 'authorizepending'): Filter by invoice status (server-side; 'authorizepending' = awaiting payment authorization)
-  - supplier_number (string): Filter by supplier number (client-side)
-  - from_date (string): Filter by invoice date from this date (YYYY-MM-DD, client-side)
-  - to_date (string): Filter by invoice date to this date (YYYY-MM-DD, client-side)
-  - period ('today' | 'yesterday' | ... | 'last_year'): Convenience date period, overrides from_date/to_date (client-side)
+  - supplier_number (string): Filter by supplier number (server-side)
+  - from_date (string): Filter by invoice date from this date (YYYY-MM-DD, server-side)
+  - to_date (string): Filter by invoice date to this date (YYYY-MM-DD, server-side)
+  - period ('today' | 'yesterday' | ... | 'last_year'): Convenience date period, overrides from_date/to_date (server-side)
   - from_final_pay_date (string): Filter by final pay date from (YYYY-MM-DD, client-side)
   - to_final_pay_date (string): Filter by final pay date to (YYYY-MM-DD, client-side)
   - sortby ('suppliername' | 'suppliernumber' | 'invoicenumber' | 'invoicedate' | 'total'): Field to sort by (client-side)
@@ -161,12 +161,18 @@ Examples:
     },
     async (params: ListSupplierInvoicesInput) => {
       try {
-        // GET /3/supplierinvoices only documents the `filter` query param -
-        // Fortnox silently ignores everything else, so all other filters and
-        // sorting are applied client-side after fetching.
+        // What /3/supplierinvoices accepts server-side: the `filter` statuses,
+        // SupplierNumber (a searchable field), and the global fromdate/todate,
+        // which Fortnox documents as available for supplierinvoices even though
+        // its OpenAPI spec lists them only on invoices/orders/offers. Everything
+        // else - final pay dates, amount ranges, sorting (the resource has no
+        // sortable fields) - has to be applied here after fetching.
         const queryParams: Record<string, string | number | boolean | undefined> = {};
 
         if (params.filter) queryParams.filter = params.filter;
+        if (params.supplier_number !== undefined) {
+          queryParams.suppliernumber = params.supplier_number;
+        }
 
         // Handle period convenience filter (overrides explicit dates)
         let fromDate = params.from_date;
@@ -177,10 +183,11 @@ Examples:
           toDate = dateRange.to_date;
         }
 
+        // Selects on the invoice date, matching the tool's documented contract.
+        if (fromDate !== undefined) queryParams.fromdate = fromDate;
+        if (toDate !== undefined) queryParams.todate = toDate;
+
         const needsClientFiltering =
-          params.supplier_number !== undefined ||
-          fromDate !== undefined ||
-          toDate !== undefined ||
           params.from_final_pay_date !== undefined ||
           params.to_final_pay_date !== undefined ||
           params.min_amount !== undefined ||
@@ -220,15 +227,6 @@ Examples:
 
         // Apply client-side filters and sorting
         if (needsClientFiltering) {
-          if (params.supplier_number !== undefined) {
-            invoices = invoices.filter(inv => inv.SupplierNumber === params.supplier_number);
-          }
-          if (fromDate !== undefined) {
-            invoices = invoices.filter(inv => inv.InvoiceDate !== undefined && inv.InvoiceDate >= fromDate!);
-          }
-          if (toDate !== undefined) {
-            invoices = invoices.filter(inv => inv.InvoiceDate !== undefined && inv.InvoiceDate <= toDate!);
-          }
           if (params.from_final_pay_date !== undefined) {
             invoices = invoices.filter(inv => inv.FinalPayDate !== undefined && inv.FinalPayDate >= params.from_final_pay_date!);
           }
@@ -562,7 +560,7 @@ Answers questions like:
 
 Args:
   - min_amount (number): Only include invoices with outstanding balance >= this amount
-  - supplier_number (string): Filter by specific supplier (client-side)
+  - supplier_number (string): Filter by specific supplier (server-side)
   - group_by ('supplier' | 'age_bucket' | 'both'): How to group report (default: both)
   - include_details (boolean): Include individual invoice list (default: true)
   - response_format ('markdown' | 'json'): Output format
@@ -591,12 +589,16 @@ Examples:
     },
     async (params: PayablesReportInput) => {
       try {
-        // Build query params - fetch unpaid invoices. `filter` is the only
-        // query param GET /3/supplierinvoices documents; suppliernumber would
-        // be silently ignored, so the supplier filter is applied client-side.
+        // Fetch unpaid invoices. SupplierNumber is a searchable field on
+        // /3/supplierinvoices, so narrowing to one supplier costs one filtered
+        // request rather than a full walk of the ledger.
         const queryParams: Record<string, string | number | boolean | undefined> = {
           filter: "unpaid"
         };
+
+        if (params.supplier_number !== undefined) {
+          queryParams.suppliernumber = params.supplier_number;
+        }
 
         const result = await fetchAllPages<FortnoxSupplierInvoiceListItem, SupplierInvoiceListResponse>(
           "/3/supplierinvoices",
@@ -608,11 +610,6 @@ Examples:
         // Cancelled invoices can still come back under filter=unpaid, and they
         // will never be paid - mirrors the receivables side in analytics.ts.
         let invoices = result.items.filter(inv => !isSupplierInvoiceCancelled(inv));
-
-        // Apply supplier filter client-side
-        if (params.supplier_number !== undefined) {
-          invoices = invoices.filter(inv => inv.SupplierNumber === params.supplier_number);
-        }
 
         // Apply min_amount filter
         if (params.min_amount !== undefined) {
