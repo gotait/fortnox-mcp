@@ -19,15 +19,30 @@ export const SERVER_TITLE = "Fortnox";
 
 export const SERVER_VERSION = "1.0.1";
 
+/** One line about the server, alongside the name in a client's UI. */
+export const SERVER_DESCRIPTION =
+  "MCP server for the Fortnox Swedish accounting API";
+
+/**
+ * Where a user can find out what this server is.
+ *
+ * The repository rather than fortnox.se: this is an integration with Fortnox,
+ * not something Fortnox publishes.
+ */
+export const SERVER_WEBSITE_URL = "https://github.com/gotait/fortnox-mcp";
+
 /**
  * Build the icon list for a deployment.
  *
  * Two forms, because the transports differ in what they can offer:
  *
  * - An HTTP deployment passes its own origin and advertises an absolute URL.
- *   The icon is then same-origin with the server, which is what clients are
- *   told to prefer, it is cached by the client, and it stays out of every
- *   initialize response.
+ *   Same-origin matters: the spec tells clients to "verify that icon URIs are
+ *   from the same origin as the server", so a URL on some other host (a CDN, a
+ *   raw.githubusercontent link) is one a strict client may refuse. The bytes are
+ *   also cached by the client and stay out of every handshake. The route serving
+ *   them must stay unauthenticated, because clients fetch icons "without
+ *   credentials" - behind the bearer check it would never load.
  * - stdio has no origin to serve from, so the PNG travels inline as a data URI.
  *   That is ~11 KB once per session.
  */
@@ -50,6 +65,8 @@ export function serverInfo(baseUrl?: string): Implementation {
     name: SERVER_NAME,
     title: SERVER_TITLE,
     version: SERVER_VERSION,
+    description: SERVER_DESCRIPTION,
+    websiteUrl: SERVER_WEBSITE_URL,
     icons: serverIcons(baseUrl),
   };
 }
