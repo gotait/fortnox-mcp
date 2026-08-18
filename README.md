@@ -442,6 +442,15 @@ verifies its own tokens.
 npm run cf:deploy
 ```
 
+Pushes to `main` deploy on their own: the repository is connected to
+[Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/), so
+Cloudflare builds and deploys the Worker on every push to that branch. Build
+logs live under **Workers → fortnox-mcp → Deployments**. `npm run cf:deploy`
+stays useful for deploying uncommitted work.
+
+Secrets are not part of a deploy - they are stored on the Worker and survive
+every build, so a Workers Build never needs the Fortnox credentials.
+
 #### 5. Configure the Fortnox OAuth callback
 
 In your Fortnox app settings, add the redirect URI:
@@ -460,9 +469,19 @@ Everything is driven by the environment. Secrets go through
 | `FORTNOX_CLIENT_ID` | secret | — | Fortnox app client ID |
 | `FORTNOX_CLIENT_SECRET` | secret | — | Fortnox app client secret |
 | `FORTNOX_READ_ONLY` | var | `"true"` | `"true"` registers only the 34 read tools; `"false"` exposes all 51, including create/update/delete/approve/bookkeep/cancel/credit/send-email |
-| `FORTNOX_SCOPES` | var | the five below | Scopes requested from Fortnox, space- or comma-separated. Must be a subset of what the app grants |
+| `FORTNOX_SCOPES` | var | the ten below | Scopes requested from Fortnox, space- or comma-separated. Must be a subset of what the app grants |
 
-Default scopes: `companyinformation customer invoice supplier bookkeeping`.
+Default scopes - one per endpoint family the tools call, matching
+`FORTNOX_SCOPES` in `src/auth/credentials.ts`:
+
+```
+bookkeeping companyinformation costcenter customer invoice
+offer order project supplier supplierinvoice
+```
+
+Narrowing this list also narrows what the Worker advertises in its
+`scopesSupported` discovery document, so clients stop asking for scopes the
+deployment never obtains.
 
 Changing a `var` takes effect on the next deploy. To change one without
 editing the file, use the dashboard (**Workers → fortnox-mcp → Settings →
