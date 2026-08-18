@@ -20,6 +20,7 @@ import {
 
 import { DatabaseTokenProvider } from "../auth/databaseProvider.js";
 import { KVTokenStorage } from "../auth/storage/kv.js";
+import { ICON_MIME_TYPE, ICON_PATH, iconPngBytes } from "../server/icon.js";
 import {
   getConfiguredCredentials,
   getRequestedScopes,
@@ -218,6 +219,17 @@ export const fortnoxAuthHandler: ExportedHandler<Env> = {
         );
       }
       throw error;
+    }
+
+    // Unauthenticated on purpose: a client renders the icon before it holds a
+    // token, and the bytes are public branding either way.
+    if (request.method === "GET" && url.pathname === ICON_PATH) {
+      return new Response(iconPngBytes(), {
+        headers: {
+          "Content-Type": ICON_MIME_TYPE,
+          "Cache-Control": "public, max-age=86400",
+        },
+      });
     }
 
     if (url.pathname === "/health") {

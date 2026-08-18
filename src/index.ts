@@ -34,13 +34,14 @@ import { getFortnoxAuth } from "./services/auth.js";
 import { getStorageFromEnv } from "./auth/storage/index.js";
 import { runRemoteServer } from "./server/remote.js";
 import { isReadOnlyMode, applyReadOnlyMode } from "./server/readOnly.js";
+import { serverInfo } from "./server/identity.js";
 import { registerAllTools } from "./server/tools.js";
 
 function createMcpServer(): McpServer {
-  const server = new McpServer({
-    name: "fortnox-mcp-server",
-    version: "1.0.0"
-  });
+  // No base URL: both local transports inline the icon rather than serving it.
+  // The stdio transport has no origin at all, and the local HTTP one is bound to
+  // loopback by default, so an absolute URL would not resolve for the client.
+  const server = new McpServer(serverInfo());
 
   if (isReadOnlyMode()) {
     applyReadOnlyMode(server);

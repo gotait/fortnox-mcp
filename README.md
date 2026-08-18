@@ -509,6 +509,7 @@ excluded from the Node `tsc` build and typechecked separately.
 | Endpoint | Description |
 |----------|-------------|
 | `GET /health` | Health check |
+| `GET /icon.png` | Server icon, unauthenticated (the HTTP deployments; stdio inlines it in the handshake instead) |
 | `GET /.well-known/oauth-authorization-server` | OAuth metadata |
 | `POST /authorize` | Start OAuth flow |
 | `POST /token` | Exchange code for tokens |

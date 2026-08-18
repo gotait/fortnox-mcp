@@ -23,6 +23,7 @@ import { KVTokenStorage } from "../auth/storage/kv.js";
 import { initializeTokenProvider } from "../auth/registry.js";
 import { runWithContext } from "../auth/context.js";
 import { applyReadOnlyMode } from "../server/readOnly.js";
+import { serverInfo } from "../server/identity.js";
 import { registerAllTools } from "../server/tools.js";
 // Only handlers may be named exports of a Worker entry module - the runtime
 // treats every export as a service and rejects anything else - so constants
@@ -35,8 +36,6 @@ import {
   type Env,
   type FortnoxProps,
 } from "./env.js";
-
-const SERVER_VERSION = "1.0.1";
 
 /**
  * Cached per isolate. Bindings are stable for an isolate's lifetime, so reusing
@@ -59,11 +58,13 @@ function tokenProviderFor(env: Env): DatabaseTokenProvider | null {
   return cachedProvider;
 }
 
-function buildServer(env: Env): McpServer {
-  const server = new McpServer({
-    name: "fortnox-mcp-server",
-    version: SERVER_VERSION,
-  });
+/**
+ * @param baseUrl - This request's origin, so the advertised icon URL points at
+ *   the host the client actually reached, whether that is workers.dev or a
+ *   custom domain.
+ */
+function buildServer(env: Env, baseUrl: string): McpServer {
+  const server = new McpServer(serverInfo(baseUrl));
 
   // Must run before registration so the filter covers every tool.
   if (isReadOnly(env)) {
@@ -108,7 +109,7 @@ export class FortnoxMcpHandler extends WorkerEntrypoint<Env, FortnoxProps> {
 
     initializeTokenProvider(provider);
 
-    const server = buildServer(this.env);
+    const server = buildServer(this.env, new URL(request.url).origin);
     const transport = new WebStandardStreamableHTTPServerTransport({
       // Stateless: no session id, and JSON responses rather than SSE streams,
       // which suits a Worker that does not hold connections open.

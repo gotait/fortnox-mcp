@@ -11,6 +11,8 @@ import {
 } from "../auth/index.js";
 import { runWithContext } from "../auth/context.js";
 import { isReadOnlyMode, applyReadOnlyMode } from "./readOnly.js";
+import { ICON_MIME_TYPE, ICON_PATH, iconPngBytes } from "./icon.js";
+import { serverInfo } from "./identity.js";
 import { registerAllTools } from "./tools.js";
 import { ITokenStorage } from "../auth/storage/types.js";
 
@@ -45,6 +47,15 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
       server: "fortnox-mcp-server",
       mode: "remote",
     });
+  });
+
+  // Public: clients fetch the icon while deciding whether to authorize, so it
+  // cannot sit behind the bearer-token check.
+  app.get(ICON_PATH, (_req, res) => {
+    res
+      .type(ICON_MIME_TYPE)
+      .set("Cache-Control", "public, max-age=86400")
+      .send(Buffer.from(iconPngBytes()));
   });
 
   app.use(
@@ -102,10 +113,7 @@ export function createRemoteServer(options: RemoteServerOptions): Express {
    * building the pair per request costs only tool registration.
    */
   function buildServer(): McpServer {
-    const server = new McpServer({
-      name: "fortnox-mcp-server",
-      version: "1.0.0",
-    });
+    const server = new McpServer(serverInfo(serverUrl));
 
     // Must run before registration so the filter covers every tool.
     if (isReadOnlyMode()) {
