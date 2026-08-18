@@ -88,10 +88,16 @@ ${body}
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
       "X-Robots-Tag": "noindex, nofollow",
-      // These pages carry a single-use nonce and post it back. Nothing should
-      // frame them, and nothing off-origin should load.
+      // Nothing should frame these pages and nothing off-origin should load.
+      //
+      // No form-action: Chrome blocks the access-level form under
+      // `form-action 'self'` even though it posts to this same origin, and the
+      // POST then redirects on to Fortnox, which is cross-origin anyway. The
+      // directive was buying close to nothing here — the action is hardcoded in
+      // our own markup and `default-src 'none'` already blocks every script
+      // that could rewrite it — so it goes rather than the flow breaking.
       "Content-Security-Policy":
-        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+        "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
       "Referrer-Policy": "no-referrer",
     },
   });
