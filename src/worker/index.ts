@@ -32,7 +32,6 @@ import { fortnoxAuthHandler } from "./fortnoxAuthHandler.js";
 import {
   getConfiguredCredentials,
   getRequestedScopes,
-  readOnlyIsForced,
   type Env,
   type FortnoxProps,
 } from "./env.js";
@@ -66,15 +65,12 @@ function tokenProviderFor(env: Env): DatabaseTokenProvider | null {
  *   The server is built per request, so two clients on the same deployment can
  *   see different tool surfaces.
  */
-function buildServer(env: Env, baseUrl: string, readOnly: boolean): McpServer {
+function buildServer(baseUrl: string, readOnly: boolean): McpServer {
   const server = new McpServer(serverInfo(baseUrl));
 
   // Must run before registration so the filter covers every tool.
   if (readOnly) {
-    applyReadOnlyMode(
-      server,
-      readOnlyIsForced(env) ? "FORTNOX_READ_ONLY=true" : "chosen at authorization"
-    );
+    applyReadOnlyMode(server, "chosen at authorization");
   }
 
   registerAllTools(server);
@@ -116,12 +112,12 @@ export class FortnoxMcpHandler extends WorkerEntrypoint<Env, FortnoxProps> {
 
     initializeTokenProvider(provider);
 
-    // Only an explicit `false` means write access. A grant issued before the
-    // access-level choice existed carries no flag, and is read as read-only
-    // rather than assumed to be write-capable; the env ceiling still wins.
-    const readOnly = props?.readOnly !== false || readOnlyIsForced(this.env);
+    // The grant is the only input. Only an explicit `false` means write access:
+    // a grant issued before the access-level choice existed carries no flag, and
+    // is read as read-only rather than assumed to be write-capable.
+    const readOnly = props?.readOnly !== false;
 
-    const server = buildServer(this.env, new URL(request.url).origin, readOnly);
+    const server = buildServer(new URL(request.url).origin, readOnly);
     const transport = new WebStandardStreamableHTTPServerTransport({
       // Stateless: no session id, and JSON responses rather than SSE streams,
       // which suits a Worker that does not hold connections open.

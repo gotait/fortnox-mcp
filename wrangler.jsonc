@@ -28,12 +28,9 @@
   // without one from the dashboard (Workers > fortnox-mcp > Settings >
   // Variables) or with `wrangler deploy --var NAME:value`.
   "vars": {
-    // Ceiling, not the whole answer. Each user now picks read-only or
-    // read-write when they authorize, and the choice rides on their grant.
-    //   "true"  -> forces read-only for everyone; the question is not asked
-    //   "false" -> the user chooses; read-only is the recommended default,
-    //              and any grant without an explicit choice reads as read-only
-    "FORTNOX_READ_ONLY": "true",
+    // The tool surface is not configured here. Each user picks read-only or
+    // read-write when they authorize, and the choice rides on their grant -
+    // see src/worker/pages.ts and FortnoxProps.readOnly.
 
     // Scopes requested from Fortnox, space- or comma-separated. Must be a
     // subset of what the Fortnox app grants: requesting one it does not have

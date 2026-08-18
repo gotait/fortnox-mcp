@@ -7,14 +7,20 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
  * Write tools (create/update/delete/approve/bookkeep/cancel/credit/send-email)
  * are never exposed to the client.
  *
- * Two things can turn it on: FORTNOX_READ_ONLY=true, which forces it for the
- * whole deployment, or a user choosing read-only when they authorize. The
- * Worker builds a server per request, so the per-grant choice costs nothing
- * beyond the registration it already does.
+ * What turns it on depends on the deployment. The Worker asks each user at
+ * authorization and reads the answer off their grant, so two clients on one host
+ * can see different tool surfaces; it builds a server per request anyway, so
+ * that costs nothing beyond registration. The single-user Node entry points have
+ * no authorization step to ask at, so there FORTNOX_READ_ONLY=true is what sets
+ * it (see isReadOnlyMode).
  */
 
 /**
- * Check whether read-only mode is enabled via the environment
+ * Check whether read-only mode is enabled via the environment.
+ *
+ * For the Node entry points only — single-user local mode and the Express remote
+ * server, neither of which has a per-user access-level choice to read. The
+ * Worker ignores this and uses the grant.
  */
 export function isReadOnlyMode(): boolean {
   return process.env.FORTNOX_READ_ONLY === "true";

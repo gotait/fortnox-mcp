@@ -190,6 +190,7 @@ npm run build
 | `FORTNOX_CLIENT_SECRET` | Yes | Your Fortnox app client secret |
 | `FORTNOX_REFRESH_TOKEN` | Yes | OAuth2 refresh token (only needed for initial setup; automatically persisted after first use) |
 | `FORTNOX_ACCESS_TOKEN` | No | Current access token (auto-refreshed) |
+| `FORTNOX_READ_ONLY` | No | `"true"` registers only the 34 read tools. Local mode is single-user with no authorization step, so this is how read-only is set here; the Worker instead asks each user (see below) |
 | `TRANSPORT` | No | `stdio` (default) or `http` |
 | `PORT` | No | HTTP port (default: 3000) |
 | `HOST` | No | Interface to bind in `http` mode (default: `127.0.0.1`). The local `/mcp` endpoint has no authentication, so only set this (e.g. `0.0.0.0`) if you intend to expose it to other machines |
@@ -468,28 +469,26 @@ Everything is driven by the environment. Secrets go through
 |----------|------|---------|-------------|
 | `FORTNOX_CLIENT_ID` | secret | — | Fortnox app client ID |
 | `FORTNOX_CLIENT_SECRET` | secret | — | Fortnox app client secret |
-| `FORTNOX_READ_ONLY` | var | `"true"` | Ceiling on the tool surface. `"true"` forces read-only for every user and skips the question at login; `"false"` lets each user choose when they authorize |
 | `FORTNOX_SCOPES` | var | the ten below | Scopes requested from Fortnox, space- or comma-separated. Must be a subset of what the app grants |
 | `SUPPORT_EMAIL` | var | — | Optional. Shown on the authorization error pages as the address to write to |
 
-### Access level is chosen per user
+### Access level is chosen per user, not configured
 
-With `FORTNOX_READ_ONLY` unset or `"false"`, the authorization flow asks each
-user whether the app should get read-only or read-write access before sending
-them to Fortnox. The answer is stored on their OAuth grant, and the Worker
+The Worker has no read-only setting. Instead the authorization flow asks each
+user whether the app should get read-only or read-write access, before sending
+them on to Fortnox. The answer is stored on their OAuth grant, and the Worker
 builds its tool surface per request from that grant - so one deployment serves a
-customer who only wants reads (34 tools) alongside one who wants writes (51)
-without either affecting the other.
+customer who only wants reads (34 tools) alongside one who wants writes (51),
+and neither affects the other.
 
-Read-only is the recommended option on that screen, and it is also the
-fallback: a grant carrying no explicit choice - one issued before this existed,
-or any request where the flag is missing - is treated as read-only rather than
-assumed to be write-capable. Setting `FORTNOX_READ_ONLY=true` overrides the
-choice for everyone, including grants that already chose writes.
+Read-only is the recommended option on that screen, and it is the fallback
+everywhere: only an explicit choice of read-write grants writes, so a missing or
+unexpected answer, and any grant carrying no choice at all, read as read-only. To
+change level, authorize again and pick the other option.
 
 Fortnox scopes are per endpoint family and do not separate reads from writes, so
-this is enforced by which tools get registered, not by Fortnox. A deployment
-that must not be able to write at all needs a Fortnox app with narrower scopes.
+this is enforced by which tools get registered, not by Fortnox. A deployment that
+must be incapable of writing needs a Fortnox app with narrower scopes.
 
 Default scopes - one per endpoint family the tools call, matching
 `FORTNOX_SCOPES` in `src/auth/credentials.ts`:
@@ -508,7 +507,7 @@ editing the file, use the dashboard (**Workers → fortnox-mcp → Settings →
 Variables**) or:
 
 ```bash
-npx wrangler deploy --var FORTNOX_READ_ONLY:false
+npx wrangler deploy --var SUPPORT_EMAIL:support@example.se
 ```
 
 Never put the client secret in `vars` - those are readable in the dashboard

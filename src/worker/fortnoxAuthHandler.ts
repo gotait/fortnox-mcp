@@ -11,7 +11,8 @@
  *
  * The access level is chosen here rather than set per deployment, so one host
  * can serve a customer who only wants reads alongside one who wants writes.
- * FORTNOX_READ_ONLY=true still forces read-only and skips the question.
+ * There is no deployment-wide override: the grant is the only thing that
+ * decides, which keeps one place to look when asking what a client can do.
  *
  * The MCP client never sees a Fortnox token. It receives a token minted by the
  * OAuth library, whose props carry only the user id used to look the Fortnox
@@ -36,7 +37,6 @@ import {
 import {
   getConfiguredCredentials,
   getRequestedScopes,
-  readOnlyIsForced,
   type Env,
 } from "./env.js";
 
@@ -187,20 +187,10 @@ async function handleAuthorize(request: Request, env: Env): Promise<Response> {
 
   // Single-use nonce tying the Fortnox round trip back to this request.
   const state = crypto.randomUUID();
-  const forced = readOnlyIsForced(env);
 
-  await putPending(env, state, {
-    authRequest,
-    createdAt: Date.now(),
-    // Recorded up front when the deployment forces read-only; otherwise the
-    // /authorize/mode POST fills it in from what the user picked.
-    ...(forced ? { readOnly: true } : {}),
-  });
-
-  // Nothing to ask when the answer is fixed — go straight to Fortnox.
-  if (forced) {
-    return Response.redirect(fortnoxAuthorizationUrl(request, env, state), 302);
-  }
+  // No access level yet: the /authorize/mode POST fills it in from what the
+  // user picks, and the callback reads a still-absent choice as read-only.
+  await putPending(env, state, { authRequest, createdAt: Date.now() });
 
   return accessLevelPage(state, client.clientName);
 }
@@ -250,7 +240,7 @@ async function handleModeSelection(request: Request, env: Env): Promise<Response
 
   // Re-put rather than mutate: KV holds JSON, and this also refreshes the TTL
   // so the Fortnox leg gets its full window from the moment of the choice.
-  await putPending(env, state, { ...pending, readOnly: readOnly || readOnlyIsForced(env) });
+  await putPending(env, state, { ...pending, readOnly });
 
   return Response.redirect(fortnoxAuthorizationUrl(request, env, state), 302);
 }
@@ -297,8 +287,8 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
   await env.FORTNOX_TOKENS.delete(pendingKeyFor(state));
 
   // A record that never went through /authorize/mode has no choice on it, so
-  // read-only is the reading. The env ceiling still overrides either way.
-  const readOnly = pending.readOnly !== false || readOnlyIsForced(env);
+  // read-only is the reading.
+  const readOnly = pending.readOnly !== false;
 
   // Opaque per-grant identity. Fortnox issues no stable user identifier here,
   // and the tokens are what actually scope access, so a fresh id per
