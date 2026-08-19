@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { fetchAllPages } from "../services/api.js";
 import { ResponseFormat } from "../constants.js";
+import { uiMeta } from "../apps/index.js";
 import {
   buildToolResponse,
   buildErrorResponse,
@@ -243,6 +244,7 @@ Error Handling:
   - Returns "Error: ..." if the API call fails`,
       inputSchema: CashFlowForecastSchema,
       outputSchema: CashFlowForecastOutputSchema,
+      _meta: uiMeta("fortnox_cash_flow_forecast"),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -482,6 +484,7 @@ Error Handling:
   - Returns "Error: ..." if the API call fails`,
       inputSchema: OrderPipelineSchema,
       outputSchema: OrderPipelineOutputSchema,
+      _meta: uiMeta("fortnox_order_pipeline"),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -664,6 +667,7 @@ Error Handling:
   - Returns "Error: ..." if the API call fails`,
       inputSchema: SalesFunnelSchema,
       outputSchema: SalesFunnelOutputSchema,
+      _meta: uiMeta("fortnox_sales_funnel"),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -1052,6 +1056,7 @@ Error Handling:
   - Returns "Error: ..." if the API call fails`,
       inputSchema: PeriodComparisonSchema,
       outputSchema: PeriodComparisonOutputSchema,
+      _meta: uiMeta("fortnox_period_comparison"),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,

@@ -302,7 +302,16 @@ export const CashFlowForecastOutputSchema = z.object({
     payables_count: z.number(),
     ending_balance: z.number()
   }),
-  periods: helperBuilt(),
+  /** camelCase keys, unlike the snake_case used elsewhere — matches the handler. */
+  periods: z.array(z.object({
+    period: z.string(),
+    inflows: z.number(),
+    outflows: z.number(),
+    netFlow: z.number(),
+    runningBalance: z.number(),
+    receivablesCount: z.number(),
+    payablesCount: z.number()
+  })),
   ...truncationFields,
   warning: z.string().optional().describe("Set when supplier invoices were unavailable")
 });
@@ -320,7 +329,12 @@ export const OrderPipelineOutputSchema = z.object({
     cancelled_orders: z.number(),
     unique_customers: z.number()
   }),
-  groups: helperBuilt(),
+  groups: z.array(z.object({
+    key: z.string(),
+    count: z.number(),
+    total_value: z.number(),
+    average_value: z.number()
+  })),
   ...truncationFields
 });
 
@@ -358,22 +372,42 @@ export const ProductPerformanceOutputSchema = z.object({
   truncated: z.boolean()
 });
 
+const DateRangeOutput = z.object({ from_date: z.string(), to_date: z.string() });
+
+/** calculateMetrics() in src/tools/biAnalytics.ts */
+const ComparableMetrics = z.object({
+  revenue: z.number(),
+  invoice_count: z.number(),
+  average_invoice: z.number(),
+  unique_customers: z.number().describe("Distinct customers invoiced, not newly acquired")
+});
+
+/** GrowthResult from src/services/aggregationHelpers.ts */
+const GrowthOutput = z.object({
+  current: z.number(),
+  previous: z.number(),
+  change: z.number(),
+  percentChange: z.number(),
+  trend: z.enum(["up", "down", "flat"])
+});
+
 export const PeriodComparisonOutputSchema = z.object({
   current_period: z.object({
     // the derived previous period has no name when the current one was a
     // custom date range, so both sides are nullable
     period: z.string().nullable(),
     description: z.string(),
-    date_range: helperBuilt(),
-    metrics: helperBuilt()
+    date_range: DateRangeOutput,
+    metrics: ComparableMetrics
   }),
   previous_period: z.object({
     period: z.string().nullable(),
     description: z.string(),
-    date_range: helperBuilt(),
-    metrics: helperBuilt()
+    date_range: DateRangeOutput,
+    metrics: ComparableMetrics
   }),
-  comparison: helperBuilt(),
+  /** keyed by the metric names the caller asked to compare */
+  comparison: z.record(GrowthOutput),
   truncated: z.boolean()
 });
 

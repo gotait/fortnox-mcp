@@ -44,6 +44,9 @@ export const CSS = `
   td.bar { width: 100%; min-width: 3rem; }
   .track { background: var(--line); height: .7rem; border-radius: .1rem; }
   .fill { background: var(--bar); height: .7rem; border-radius: .1rem; }
+  /* a negative value scaled by magnitude looks like a small positive one, which
+     reads badly on a cash-flow chart — give it the accent colour instead */
+  .fill.neg { background: var(--accent); }
   .total { margin-top: 1rem; padding-top: .6rem; border-top: 1px solid var(--line);
            font-size: .8rem; color: var(--muted); }
 `;
@@ -83,9 +86,10 @@ export function barChart(rows: BarRow[], currency = "SEK"): string {
   return `<table>${rows
     .map((r) => {
       const pct = Math.max(1, Math.round((Math.abs(r.value) / max) * 100));
+      const neg = r.value < 0 ? " neg" : "";
       return `<tr>
         <td class="label">${escapeHtml(r.label)}</td>
-        <td class="bar"><div class="track"><div class="fill" style="width:${pct}%"></div></div></td>
+        <td class="bar"><div class="track"><div class="fill${neg}" style="width:${pct}%"></div></div></td>
         <td class="value">${escapeHtml(r.note ?? money(r.value, currency))}</td>
       </tr>`;
     })
@@ -106,4 +110,34 @@ export function heading(title: string, subtitle?: string): string {
 /** Period label from the shared `period` / `date_range` fields. */
 export function periodLabel(data: { period?: unknown; date_range?: unknown }): string {
   return String(data.date_range ?? data.period ?? "");
+}
+
+/** A renderer turns one tool's structuredContent into the widget's HTML. */
+export type Renderer = (data: Record<string, unknown>) => string;
+
+/** Percentage with a sign, for growth figures. */
+export function delta(percent: number): string {
+  const rounded = Math.round(percent * 10) / 10;
+  return `${rounded > 0 ? "+" : ""}${rounded.toLocaleString("sv-SE")} %`;
+}
+
+/** ▲ / ▼ / → for a GrowthResult trend. */
+export function trendMark(trend: string): string {
+  return trend === "up" ? "▲" : trend === "down" ? "▼" : "→";
+}
+
+/** Label/value rows for figures that are not comparable on one scale. */
+export function factRows(rows: Array<[string, string]>): string {
+  return `<table>${rows
+    .map(
+      ([k, v]) =>
+        `<tr><td class="label">${escapeHtml(k)}</td><td class="bar"></td>` +
+        `<td class="value">${escapeHtml(v)}</td></tr>`
+    )
+    .join("")}</table>`;
+}
+
+/** Section label between charts. */
+export function section(label: string): string {
+  return `<p class="sub" style="margin:1.2rem 0 .3rem">${escapeHtml(label)}</p>`;
 }

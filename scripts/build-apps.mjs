@@ -1,93 +1,100 @@
 /**
- * Bundle the MCP App widgets into self-contained HTML.
+ * Bundle the MCP App widgets into one self-contained HTML document.
  *
- * The host renders a widget in a sandboxed iframe whose default CSP is
- * `default-src 'none'`, so the HTML has to carry its own CSS and JS inline —
- * nothing can be fetched. And the Worker has no filesystem, so the finished
- * HTML cannot be read at runtime the way the MCP Apps tutorial does with
- * fs.readFile. Both constraints point the same way: bundle at build time and
- * emit the HTML as a TypeScript module the server imports.
+ * Two constraints shape this. The host renders a widget in a sandboxed iframe
+ * whose default CSP is `default-src 'none'`, so the HTML must carry its own CSS
+ * and JS inline — nothing can be fetched. And the Worker has no filesystem, so
+ * the finished HTML cannot be read at runtime the way the MCP Apps tutorial does
+ * with fs.readFile. Both point the same way: bundle at build time and emit the
+ * HTML as a TypeScript module the server imports.
+ *
+ * One document, not one per widget: the tool name is not part of the protocol,
+ * so the server injects the widget id as `<body data-widget="…">` when it serves
+ * a resource, and src/apps/ui/main.ts dispatches on it. That keeps a single copy
+ * of the ~300 KB MCP Apps client in the Worker instead of one per view.
  *
  * Output: src/apps/generated/widgets.ts — generated, do not edit.
- *
- * Run via `npm run build:apps`; `npm run build` does it first.
  */
 import { build } from "esbuild";
-import { readdir, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 
 const UI_DIR = "src/apps/ui";
+const ENTRY = path.join(UI_DIR, "main.ts");
 const OUT = "src/apps/generated/widgets.ts";
-const SUFFIX = ".widget.ts";
+const ID_PLACEHOLDER = "__WIDGET_ID__";
 
-/** Wrap a bundled script in the minimal page the host will render. */
-function page(title, css, js) {
-  return `<!doctype html>
-<html lang="sv">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title}</title>
-<style>${css}</style>
-</head>
-<body>
-<p class="empty">Laddar…</p>
-<script type="module">${js}</script>
-</body>
-</html>`;
+/** Widget ids come from the RENDERERS keys in main.ts — one source of truth. */
+async function widgetIds() {
+  const src = await readFile(ENTRY, "utf-8");
+  const block = /export const RENDERERS = \{([\s\S]*?)\n\} satisfies/.exec(src);
+  if (!block) throw new Error(`could not find the RENDERERS block in ${ENTRY}`);
+  const ids = [...block[1].matchAll(/^\s*"([a-z0-9-]+)":/gm)].map((m) => m[1]);
+  if (ids.length === 0) throw new Error(`no widget ids in the RENDERERS block`);
+  return ids;
 }
 
-const entries = (await readdir(UI_DIR)).filter((f) => f.endsWith(SUFFIX)).sort();
-if (entries.length === 0) throw new Error(`no ${SUFFIX} files in ${UI_DIR}`);
-
-// the shell's CSS is a plain exported string; pull it out of a tiny bundle so
-// it lands in <style> rather than being injected by script at runtime
-const cssBundle = await build({
-  entryPoints: [path.join(UI_DIR, "shell.ts")],
-  bundle: true,
-  write: false,
-  format: "esm",
-  platform: "browser",
-  target: "es2022"
-});
-const cssMatch = /CSS\s*=\s*`([\s\S]*?)`/.exec(cssBundle.outputFiles[0].text);
-if (!cssMatch) throw new Error("could not extract CSS from shell.ts");
-const css = cssMatch[1];
-
-const widgets = {};
-for (const file of entries) {
-  const id = file.slice(0, -SUFFIX.length).replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
+async function bundle(entry, { extract } = {}) {
   const result = await build({
-    entryPoints: [path.join(UI_DIR, file)],
+    entryPoints: [entry],
     bundle: true,
     write: false,
     format: "esm",
     platform: "browser",
     target: "es2022",
-    minify: true,
+    minify: !extract,
     legalComments: "none"
   });
-  widgets[id] = page(`Fortnox — ${id}`, css, result.outputFiles[0].text);
-  const kb = Math.round(widgets[id].length / 1024);
-  console.log(`  ${id.padEnd(18)} ${String(kb).padStart(4)} KB`);
+  return result.outputFiles[0].text;
 }
+
+const ids = await widgetIds();
+
+// pull the stylesheet out of an unminified shell bundle so it lands in <style>
+// rather than being injected by script at runtime
+const shellSrc = await bundle(path.join(UI_DIR, "shell.ts"), { extract: true });
+const cssMatch = /CSS\s*=\s*`([\s\S]*?)`/.exec(shellSrc);
+if (!cssMatch) throw new Error("could not extract CSS from shell.ts");
+const css = cssMatch[1];
+
+const js = await bundle(ENTRY);
+
+const html = `<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fortnox</title>
+<style>${css}</style>
+</head>
+<body data-widget="${ID_PLACEHOLDER}">
+<p class="empty">Laddar…</p>
+<script type="module">${js}</script>
+</body>
+</html>`;
 
 await mkdir(path.dirname(OUT), { recursive: true });
 await writeFile(
   OUT,
   `// GENERATED by scripts/build-apps.mjs — do not edit.
 //
-// One self-contained HTML document per widget: inline CSS, inline bundled JS,
-// no external requests. See the script for why this is generated rather than
-// read from disk at runtime.
+// One self-contained document shared by every widget: inline CSS, inline bundled
+// JS, no external requests. registerAppResources() substitutes the placeholder
+// with the widget id when serving each ui:// resource.
 
-export const WIDGET_HTML = ${JSON.stringify(widgets, null, 2)} as const;
+/** Replaced with a WidgetId at resource-read time. */
+export const WIDGET_ID_PLACEHOLDER = ${JSON.stringify(ID_PLACEHOLDER)};
 
-/** Widget ids, derived from the files in src/apps/ui/*.widget.ts. */
-export type WidgetId = keyof typeof WIDGET_HTML;
+export const WIDGET_SHELL_HTML = ${JSON.stringify(html)};
 
-export const WIDGET_IDS = Object.keys(WIDGET_HTML) as WidgetId[];
+/** Ids, from the RENDERERS keys in src/apps/ui/main.ts. */
+export const WIDGET_IDS = ${JSON.stringify(ids)} as const;
+
+export type WidgetId = (typeof WIDGET_IDS)[number];
 `,
   "utf-8"
 );
-console.log(`wrote ${OUT} (${entries.length} widgets)`);
+
+const kb = Math.round(html.length / 1024);
+console.log(`  ${ids.length} widgets share one ${kb} KB document: ${ids.join(", ")}`);
+console.log(`wrote ${OUT}`);

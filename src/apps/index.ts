@@ -27,6 +27,11 @@
  *   this server builds its tool list per request, before it has seen the
  *   client's capabilities.
  *
+ * - One bundled document serves every widget, with the id injected at
+ *   resource-read time. The tool name is not part of the protocol, so the
+ *   document has to be told which renderer to run; bundling once rather than
+ *   per widget keeps a single copy of the ~300 KB MCP Apps client in the Worker.
+ *
  * - Only read-only analytics tools get widgets. A widget can call tools back
  *   through the host (`app.callServerTool`), so keeping write tools out of the
  *   UI surface means a rendered chart can never become a write path.
@@ -34,7 +39,12 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { WIDGET_HTML, WIDGET_IDS, type WidgetId } from "./generated/widgets.js";
+import {
+  WIDGET_ID_PLACEHOLDER,
+  WIDGET_IDS,
+  WIDGET_SHELL_HTML,
+  type WidgetId
+} from "./generated/widgets.js";
 
 /** Per the extension: `text/html` with the mcp-app profile. */
 export const APP_MIME_TYPE = "text/html;profile=mcp-app";
@@ -54,7 +64,11 @@ export function widgetUri(id: WidgetId): string {
 export const TOOL_WIDGETS = {
   fortnox_top_customers: "top-customers",
   fortnox_invoice_summary: "invoice-summary",
-  fortnox_unpaid_report: "unpaid-report"
+  fortnox_unpaid_report: "unpaid-report",
+  fortnox_sales_funnel: "sales-funnel",
+  fortnox_cash_flow_forecast: "cash-flow",
+  fortnox_order_pipeline: "order-pipeline",
+  fortnox_period_comparison: "period-comparison"
 } satisfies Record<string, WidgetId>;
 
 export type WidgetToolName = keyof typeof TOOL_WIDGETS;
@@ -71,7 +85,11 @@ export function uiMeta(tool: WidgetToolName): { ui: { resourceUri: string } } {
 const WIDGET_TITLES: Record<WidgetId, string> = {
   "top-customers": "Toppkunder",
   "invoice-summary": "Fakturasammanställning",
-  "unpaid-report": "Obetalda kundfakturor"
+  "unpaid-report": "Obetalda kundfakturor",
+  "sales-funnel": "Säljtratt",
+  "cash-flow": "Kassaflödesprognos",
+  "order-pipeline": "Orderflöde",
+  "period-comparison": "Periodjämförelse"
 };
 
 /**
@@ -94,8 +112,16 @@ export function registerAppResources(server: McpServer): void {
         }`,
         mimeType: APP_MIME_TYPE
       },
+      // every widget shares one bundled document; the id tells main.ts which
+      // renderer to run, since the tool name never reaches the iframe
       async () => ({
-        contents: [{ uri, mimeType: APP_MIME_TYPE, text: WIDGET_HTML[id] }]
+        contents: [
+          {
+            uri,
+            mimeType: APP_MIME_TYPE,
+            text: WIDGET_SHELL_HTML.replace(WIDGET_ID_PLACEHOLDER, id)
+          }
+        ]
       })
     );
   }

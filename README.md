@@ -474,7 +474,7 @@ Everything is driven by the environment. Secrets go through
 
 ### Interactive views (MCP Apps)
 
-Three analytics tools ship an interactive view built on the MCP Apps extension
+Seven analytics tools ship an interactive view built on the MCP Apps extension
 (SEP-1865), so a host that supports it renders a chart instead of a markdown
 table:
 
@@ -483,19 +483,30 @@ table:
 | `fortnox_top_customers` | ranked bars, following whichever `metric` was requested |
 | `fortnox_invoice_summary` | grouped totals (call with `group_by` for the breakdown) |
 | `fortnox_unpaid_report` | aging structure and largest receivables per customer |
+| `fortnox_sales_funnel` | the three stages on one scale, plus conversion rates |
+| `fortnox_cash_flow_forecast` | net flow per period and the running balance |
+| `fortnox_order_pipeline` | invoiced vs not invoiced, plus the per-group split |
+| `fortnox_period_comparison` | the two periods side by side with the change |
 
-Each view is a `ui://fortnox/<id>.html` resource whose body is a self-contained
-HTML document — inline CSS, inline JS, no external requests — and the tools
-reference it through `_meta.ui.resourceUri`. Views render only from the
-`structuredContent` the tool already returns and never call out, so no CSP
-widening is needed and the data path is unchanged from the text response. Hosts
-without the extension ignore `_meta.ui` and get the same markdown as before.
+Each view is a `ui://fortnox/<id>.html` resource and the tools reference it
+through `_meta.ui.resourceUri`. Views render only from the `structuredContent`
+the tool already returns and never call out, so no CSP widening is needed and the
+data path is unchanged from the text response. Hosts without the extension
+ignore `_meta.ui` and get the same markdown as before.
 
-Sources live in `src/apps/ui/*.widget.ts`. `npm run build:apps` bundles each one
-into `src/apps/generated/widgets.ts` (generated, gitignored); `npm run build`,
+All views share **one** bundled document — inline CSS, inline JS, no external
+requests. The tool name is not part of the protocol, so the server injects the
+view id as `<body data-widget="...">` when serving a resource and
+`src/apps/ui/main.ts` dispatches on it; bundling once rather than per view keeps
+a single copy of the ~300 KB MCP Apps client in the Worker instead of seven.
+
+Sources live in `src/apps/ui/renderers/*.ts`, with shared chart and formatting
+helpers in `src/apps/ui/shell.ts`. `npm run build:apps` bundles them into
+`src/apps/generated/widgets.ts` (generated, gitignored); `npm run build`,
 `cf:dev` and `cf:deploy` all run it first. `npm run typecheck:apps` typechecks the
-view sources, which esbuild does not. Adding a view is one `*.widget.ts` file
-plus one line in `TOOL_WIDGETS` (`src/apps/index.ts`).
+view sources, which esbuild does not. Adding a view is one renderer file, one
+line in `RENDERERS` (`src/apps/ui/main.ts`) and one line in `TOOL_WIDGETS`
+(`src/apps/index.ts`).
 
 ### Access level is chosen per user, not configured
 
