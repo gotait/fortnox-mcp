@@ -232,7 +232,7 @@ export const ListSuppliersOutputSchema = z.object({
   ...truncationFields,
   filter_warning: z.string().optional().describe("Set when a requested filter had to be applied client-side"),
   suppliers: z.array(z.object({
-    supplier_number: z.string(),
+    supplier_number: z.string().nullable(),
     name: z.string(),
     email: z.string().nullable(),
     city: z.string().nullable(),
@@ -241,7 +241,7 @@ export const ListSuppliersOutputSchema = z.object({
 });
 
 export const GetSupplierOutputSchema = z.object({
-  supplier_number: z.string(),
+  supplier_number: z.string().nullable(),
   name: z.string(),
   email: z.string().nullable(),
   phone: z.string().nullable(),
@@ -263,7 +263,7 @@ export const GetSupplierOutputSchema = z.object({
 
 export const MutateSupplierOutputSchema = z.object({
   ...writeResultFields,
-  supplier_number: z.string(),
+  supplier_number: z.string().nullable(),
   name: z.string()
 });
 

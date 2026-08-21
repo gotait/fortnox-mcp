@@ -274,8 +274,10 @@ export const ListVouchersOutputSchema = z.object({
   vouchers: z.array(z.object({
     voucher_series: z.string(),
     voucher_number: z.number(),
-    description: z.string(),
-    transaction_date: z.string()
+    // fortnox_VoucherListItem declares no required fields; only the detail
+    // schema (fortnox_Voucher) requires Description/TransactionDate.
+    description: z.string().nullable(),
+    transaction_date: z.string().nullable()
   }))
 });
 
@@ -307,7 +309,8 @@ export const ListVoucherSeriesOutputSchema = z.object({
   count: z.number(),
   series: z.array(z.object({
     code: z.string(),
-    description: z.string(),
+    // fortnox_VoucherSeriesListItem requires only Code.
+    description: z.string().nullable(),
     manual: z.boolean()
   }))
 });
@@ -359,8 +362,8 @@ export const SearchVouchersOutputSchema = z.object({
   vouchers: z.array(z.object({
     voucher_series: z.string(),
     voucher_number: z.number(),
-    transaction_date: z.string(),
-    description: z.string(),
+    transaction_date: z.string().nullable(),
+    description: z.string().nullable(),
     matched_in: z.enum(["description", "row"]),
     rows: z.array(z.object({
       account: z.number(),

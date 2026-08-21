@@ -221,7 +221,7 @@ export type DeleteCustomerInput = z.infer<typeof DeleteCustomerSchema>;
 export const ListCustomersOutputSchema = z.object({
   ...paginationMetaFields,
   customers: z.array(z.object({
-    customer_number: z.string(),
+    customer_number: z.string().nullable(),
     name: z.string(),
     email: z.string().nullable(),
     city: z.string().nullable(),
@@ -230,7 +230,7 @@ export const ListCustomersOutputSchema = z.object({
 });
 
 export const GetCustomerOutputSchema = z.object({
-  customer_number: z.string(),
+  customer_number: z.string().nullable(),
   name: z.string(),
   email: z.string().nullable(),
   phone: z.string().nullable(),
@@ -249,7 +249,7 @@ export const GetCustomerOutputSchema = z.object({
 
 export const MutateCustomerOutputSchema = z.object({
   ...writeResultFields,
-  customer_number: z.string(),
+  customer_number: z.string().nullable(),
   name: z.string()
 });
 

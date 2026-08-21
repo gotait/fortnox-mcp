@@ -139,7 +139,7 @@ Examples:
         const output: ListCustomersOutput = {
           ...buildPaginationMeta(total, params.page, params.limit, customers.length),
           customers: customers.map((c) => ({
-            customer_number: c.CustomerNumber,
+            customer_number: c.CustomerNumber ?? null,
             name: c.Name,
             email: c.Email || null,
             city: c.City || null,
@@ -201,7 +201,7 @@ Returns:
         const customer = response.Customer;
 
         const output: GetCustomerOutput = {
-          customer_number: customer.CustomerNumber,
+          customer_number: customer.CustomerNumber ?? null,
           name: customer.Name,
           email: customer.Email || null,
           phone: customer.Phone1 || null,
@@ -312,7 +312,7 @@ Returns:
         const output: MutateCustomerOutput = {
           success: true,
           message: `Customer "${customer.Name}" created successfully`,
-          customer_number: customer.CustomerNumber,
+          customer_number: customer.CustomerNumber ?? null,
           name: customer.Name
         };
 
@@ -385,7 +385,7 @@ Returns:
         const output: MutateCustomerOutput = {
           success: true,
           message: `Customer "${customer.Name}" updated successfully`,
-          customer_number: customer.CustomerNumber,
+          customer_number: customer.CustomerNumber ?? null,
           name: customer.Name
         };
 

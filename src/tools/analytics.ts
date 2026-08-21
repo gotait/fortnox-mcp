@@ -269,8 +269,8 @@ Error Handling:
 
         if (params.include_details) {
           output.invoices = invoices.map(inv => ({
-            document_number: inv.DocumentNumber,
-            customer_number: inv.CustomerNumber,
+            document_number: inv.DocumentNumber ?? null,
+            customer_number: inv.CustomerNumber ?? null,
             customer_name: inv.CustomerName || null,
             invoice_date: inv.InvoiceDate || null,
             total: inv.Total || 0,
@@ -485,7 +485,7 @@ Error Handling:
 
             if (params.include_details) {
               customer.invoices = c.invoices.map(inv => ({
-                document_number: inv.DocumentNumber,
+                document_number: inv.DocumentNumber ?? null,
                 invoice_date: inv.InvoiceDate,
                 total: inv.Total || 0,
                 balance: inv.Balance || 0
@@ -692,8 +692,8 @@ Error Handling:
           output.invoices = invoices
             .sort((a, b) => (b.Balance || 0) - (a.Balance || 0))
             .map(inv => ({
-              document_number: inv.DocumentNumber,
-              customer_number: inv.CustomerNumber,
+              document_number: inv.DocumentNumber ?? null,
+              customer_number: inv.CustomerNumber ?? null,
               customer_name: inv.CustomerName || null,
               invoice_date: inv.InvoiceDate || null,
               due_date: inv.DueDate || null,

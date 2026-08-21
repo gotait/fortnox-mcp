@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { fortnoxRequest, fetchAllPages } from "../services/api.js";
 import { ResponseFormat } from "../constants.js";
+import { toNumber, type FortnoxNumeric } from "../services/coerce.js";
 import {
   buildToolResponse,
   buildErrorResponse,
@@ -56,8 +57,10 @@ interface FortnoxSupplierInvoice {
   InvoiceNumber?: string;
   InvoiceDate?: string;
   DueDate?: string;
-  Total?: number;
-  Balance?: number;
+  /** String in the spec (fortnox_SupplierInvoice) — read via toNumber(). */
+  Total?: FortnoxNumeric;
+  /** String in the spec (fortnox_SupplierInvoice) — read via toNumber(). */
+  Balance?: FortnoxNumeric;
   Currency?: string;
   Booked?: boolean;
   Cancelled?: boolean;
@@ -77,8 +80,10 @@ interface FortnoxSupplierInvoiceListItem {
   InvoiceDate?: string;
   DueDate?: string;
   FinalPayDate?: string;
-  Total?: number;
-  Balance?: number;
+  /** String in the spec (fortnox_SupplierInvoiceListItem) — read via toNumber(). */
+  Total?: FortnoxNumeric;
+  /** String in the spec (fortnox_SupplierInvoiceListItem) — read via toNumber(). */
+  Balance?: FortnoxNumeric;
   Currency?: string;
   Booked?: boolean;
   /** The list endpoint spells this "Cancel"; only the detail object uses "Cancelled". */
@@ -116,7 +121,7 @@ function isSupplierInvoiceCancelled(inv: FortnoxSupplierInvoiceListItem): boolea
 function getSupplierInvoiceStatus(inv: FortnoxSupplierInvoiceListItem): string {
   if (isSupplierInvoiceCancelled(inv)) return "cancelled";
   if (!inv.Booked) return "draft";
-  if ((inv.Balance || 0) === 0) return "paid";
+  if (toNumber(inv.Balance) === 0) return "paid";
   return "unpaid";
 }
 
@@ -243,10 +248,10 @@ Examples:
             invoices = invoices.filter(inv => inv.FinalPayDate !== undefined && inv.FinalPayDate <= params.to_final_pay_date!);
           }
           if (params.min_amount !== undefined) {
-            invoices = invoices.filter(inv => (inv.Total || 0) >= params.min_amount!);
+            invoices = invoices.filter(inv => toNumber(inv.Total) >= params.min_amount!);
           }
           if (params.max_amount !== undefined) {
-            invoices = invoices.filter(inv => (inv.Total || 0) <= params.max_amount!);
+            invoices = invoices.filter(inv => toNumber(inv.Total) <= params.max_amount!);
           }
 
           if (params.sortby !== undefined) {
@@ -257,7 +262,7 @@ Examples:
                 case "suppliernumber": return inv.SupplierNumber || "";
                 case "invoicenumber": return inv.InvoiceNumber || "";
                 case "invoicedate": return inv.InvoiceDate || "";
-                default: return inv.Total || 0;
+                default: return toNumber(inv.Total);
               }
             };
             invoices.sort((a, b) => {
@@ -305,14 +310,14 @@ Examples:
           ...paginationMeta,
           period_description: params.period ? getPeriodDescription(params.period) : undefined,
           invoices: invoices.map((inv) => ({
-            given_number: inv.GivenNumber,
+            given_number: inv.GivenNumber ?? null,
             supplier_number: inv.SupplierNumber,
             supplier_name: inv.SupplierName || null,
             invoice_number: inv.InvoiceNumber || null,
             invoice_date: inv.InvoiceDate || null,
             due_date: inv.DueDate || null,
-            total: inv.Total || 0,
-            balance: inv.Balance || 0,
+            total: toNumber(inv.Total),
+            balance: toNumber(inv.Balance),
             currency: inv.Currency || "SEK",
             booked: inv.Booked ?? false,
             cancelled: isSupplierInvoiceCancelled(inv),
@@ -349,7 +354,7 @@ Examples:
               lines.push(`- **Supplier**: ${sanitizeInline(inv.SupplierName || inv.SupplierNumber)}`);
               lines.push(`- **Invoice Number**: ${sanitizeInline(inv.InvoiceNumber || "-")}`);
               lines.push(`- **Date**: ${formatDisplayDate(inv.InvoiceDate)} | **Due**: ${formatDisplayDate(inv.DueDate)}`);
-              lines.push(`- **Total**: ${formatMoney(inv.Total, inv.Currency)} | **Balance**: ${formatMoney(inv.Balance, inv.Currency)}`);
+              lines.push(`- **Total**: ${formatMoney(toNumber(inv.Total), inv.Currency)} | **Balance**: ${formatMoney(toNumber(inv.Balance), inv.Currency)}`);
               lines.push(`- **Status**: ${status.toUpperCase()}`);
               lines.push("");
             }
@@ -368,7 +373,7 @@ Examples:
                   `- **Supplier**: ${sanitizeInline(inv.SupplierName || inv.SupplierNumber)}\n` +
                   `- **Invoice Number**: ${sanitizeInline(inv.InvoiceNumber || "-")}\n` +
                   `- **Date**: ${formatDisplayDate(inv.InvoiceDate)} | **Due**: ${formatDisplayDate(inv.DueDate)}\n` +
-                  `- **Total**: ${formatMoney(inv.Total, inv.Currency)} | **Balance**: ${formatMoney(inv.Balance, inv.Currency)}\n` +
+                  `- **Total**: ${formatMoney(toNumber(inv.Total), inv.Currency)} | **Balance**: ${formatMoney(toNumber(inv.Balance), inv.Currency)}\n` +
                   `- **Status**: ${status.toUpperCase()}`;
               }
             );
@@ -416,14 +421,14 @@ Returns:
         const invoice = response.SupplierInvoice;
 
         const output: GetSupplierInvoiceOutput = {
-          given_number: invoice.GivenNumber,
+          given_number: invoice.GivenNumber ?? null,
           supplier_number: invoice.SupplierNumber,
           supplier_name: invoice.SupplierName || null,
           invoice_number: invoice.InvoiceNumber || null,
           invoice_date: invoice.InvoiceDate || null,
           due_date: invoice.DueDate || null,
-          total: invoice.Total || 0,
-          balance: invoice.Balance || 0,
+          total: toNumber(invoice.Total),
+          balance: toNumber(invoice.Balance),
           currency: invoice.Currency || "SEK",
           ocr: invoice.OCR || null,
           booked: invoice.Booked ?? false,
@@ -448,7 +453,7 @@ Returns:
           textContent = JSON.stringify(output, null, 2);
         } else {
           const status = invoice.Cancelled ? "CANCELLED" :
-            (invoice.Balance === 0 ? "PAID" :
+            (toNumber(invoice.Balance) === 0 ? "PAID" :
               (invoice.Booked ? "BOOKED" : "DRAFT"));
 
           const lines = [
@@ -467,8 +472,8 @@ Returns:
             `- **OCR**: ${invoice.OCR || "-"}`,
             "",
             "## Amounts",
-            `- **Total**: ${formatMoney(invoice.Total, invoice.Currency)}`,
-            `- **Balance**: ${formatMoney(invoice.Balance, invoice.Currency)}`,
+            `- **Total**: ${formatMoney(toNumber(invoice.Total), invoice.Currency)}`,
+            `- **Balance**: ${formatMoney(toNumber(invoice.Balance), invoice.Currency)}`,
             ""
           ];
 
@@ -532,10 +537,11 @@ Returns:
         const output: ApproveSupplierInvoiceOutput = {
           success: true,
           message: `Supplier invoice #${invoice.GivenNumber} has been approved for payment`,
-          given_number: invoice.GivenNumber,
+          given_number: invoice.GivenNumber ?? null,
           supplier_name: invoice.SupplierName || null,
-          total: invoice.Total || 0,
-          payment_pending: true
+          total: toNumber(invoice.Total),
+          // Read it back off the updated invoice rather than asserting it.
+          payment_pending: invoice.PaymentPending ?? true
         };
 
         let textContent: string;
@@ -545,7 +551,7 @@ Returns:
           textContent = `# Supplier Invoice Approved\n\n` +
             `Supplier invoice **#${invoice.GivenNumber}** has been approved for payment.\n\n` +
             `**Supplier**: ${sanitizeInline(invoice.SupplierName || invoice.SupplierNumber)}\n` +
-            `**Total**: ${formatMoney(invoice.Total, invoice.Currency)}\n\n` +
+            `**Total**: ${formatMoney(toNumber(invoice.Total), invoice.Currency)}\n\n` +
             `The invoice is now marked as pending payment.`;
         }
 
@@ -625,12 +631,12 @@ Examples:
 
         // Apply min_amount filter
         if (params.min_amount !== undefined) {
-          invoices = invoices.filter(inv => (inv.Balance || 0) >= params.min_amount!);
+          invoices = invoices.filter(inv => toNumber(inv.Balance) >= params.min_amount!);
         }
 
         // Calculate overall summary
-        const totalPayable = invoices.reduce((sum, inv) => sum + (inv.Balance || 0), 0);
-        const totalInvoiceAmount = invoices.reduce((sum, inv) => sum + (inv.Total || 0), 0);
+        const totalPayable = invoices.reduce((sum, inv) => sum + toNumber(inv.Balance), 0);
+        const totalInvoiceAmount = invoices.reduce((sum, inv) => sum + toNumber(inv.Total), 0);
 
         // Group by age bucket
         const byAgeBucket = new Map<AgeBucket, FortnoxSupplierInvoiceListItem[]>();
@@ -675,7 +681,7 @@ Examples:
             return {
               bucket,
               count: items.length,
-              total_balance: items.reduce((sum, inv) => sum + (inv.Balance || 0), 0)
+              total_balance: items.reduce((sum, inv) => sum + toNumber(inv.Balance), 0)
             };
           });
         }
@@ -685,23 +691,23 @@ Examples:
             .map(([supplier, items]) => ({
               supplier,
               count: items.length,
-              total_balance: items.reduce((sum, inv) => sum + (inv.Balance || 0), 0)
+              total_balance: items.reduce((sum, inv) => sum + toNumber(inv.Balance), 0)
             }))
             .sort((a, b) => b.total_balance - a.total_balance);
         }
 
         if (params.include_details) {
           output.invoices = invoices
-            .sort((a, b) => (b.Balance || 0) - (a.Balance || 0))
+            .sort((a, b) => toNumber(b.Balance) - toNumber(a.Balance))
             .map(inv => ({
-              given_number: inv.GivenNumber,
+              given_number: inv.GivenNumber ?? null,
               supplier_number: inv.SupplierNumber,
               supplier_name: inv.SupplierName || null,
               invoice_number: inv.InvoiceNumber || null,
               invoice_date: inv.InvoiceDate || null,
               due_date: inv.DueDate || null,
-              total: inv.Total || 0,
-              balance: inv.Balance || 0,
+              total: toNumber(inv.Total),
+              balance: toNumber(inv.Balance),
               age_bucket: getAgeBucket(inv.DueDate)
             }));
         }
@@ -739,7 +745,7 @@ Examples:
 
             for (const bucket of ageBucketOrder) {
               const items = byAgeBucket.get(bucket)!;
-              const balance = items.reduce((sum, inv) => sum + (inv.Balance || 0), 0);
+              const balance = items.reduce((sum, inv) => sum + toNumber(inv.Balance), 0);
               if (items.length > 0) {
                 lines.push(`| ${bucket} | ${items.length} | ${formatMoney(balance)} |`);
               }
@@ -757,7 +763,7 @@ Examples:
               .map(([supplier, items]) => ({
                 supplier,
                 count: items.length,
-                balance: items.reduce((sum, inv) => sum + (inv.Balance || 0), 0)
+                balance: items.reduce((sum, inv) => sum + toNumber(inv.Balance), 0)
               }))
               .sort((a, b) => b.balance - a.balance)
               .slice(0, 20); // Limit to top 20 in markdown
@@ -779,7 +785,7 @@ Examples:
             lines.push("|---------|----------|----------|---------|-----|");
 
             const displayInvoices = invoices
-              .sort((a, b) => (b.Balance || 0) - (a.Balance || 0))
+              .sort((a, b) => toNumber(b.Balance) - toNumber(a.Balance))
               .slice(0, 50); // Limit to top 50 in markdown
 
             for (const inv of displayInvoices) {
@@ -788,7 +794,7 @@ Examples:
                 `| #${inv.GivenNumber} ` +
                 `| ${sanitizeInline(inv.SupplierName || inv.SupplierNumber)} ` +
                 `| ${inv.DueDate || "-"} ` +
-                `| ${formatMoney(inv.Balance)} ` +
+                `| ${formatMoney(toNumber(inv.Balance))} ` +
                 `| ${bucket} |`
               );
             }

@@ -28,9 +28,13 @@ export const InvoiceRowSchema = z.object({
     .max(50)
     .optional()
     .describe("Article number from article register"),
+  // Optional: fortnox_InvoicePayload_InvoiceRow declares no required fields,
+  // and a row identified only by article_number gets its description from the
+  // article register. Length cap kept at 255 to match fortnox_Invoice_InvoiceRow.
   description: z.string()
-    .max(200)
-    .describe("Description of the invoice row"),
+    .max(255)
+    .optional()
+    .describe("Description of the invoice row. Optional when article_number is given — Fortnox fills it from the article register."),
   quantity: z.number()
     .optional()
     .describe("Quantity (default: 1)"),
@@ -168,9 +172,16 @@ export const CreateInvoiceSchema = z.object({
     .max(50)
     .optional()
     .describe("Customer's reference person"),
-  invoice_type: z.enum(["INVOICE", "CASH", "CARD", "UNDEFINED"])
+  // fortnox_InvoicePayload.InvoiceType enumerates exactly these five. The
+  // previous list ("CASH", "CARD", "UNDEFINED") was wrong in both directions:
+  // CASH/CARD are PaymentWay values, UNDEFINED appears nowhere in the spec, and
+  // the four real types below were unreachable.
+  invoice_type: z.enum(["INVOICE", "AGREEMENTINVOICE", "INTRESTINVOICE", "SUMMARYINVOICE", "CASHINVOICE"])
     .optional()
-    .describe("Type of invoice"),
+    .describe("Type of invoice. 'CASHINVOICE' is a cash invoice; for how it is paid use payment_way instead."),
+  payment_way: z.enum(["CASH", "CARD", "AG"])
+    .optional()
+    .describe("How the invoice is paid: 'CASH', 'CARD' or 'AG' (autogiro)"),
   currency: z.string()
     .length(3)
     .optional()
@@ -294,7 +305,7 @@ export const ListInvoicesOutputSchema = z.object({
   ...listMetaFields,
   period_description: z.string().optional(),
   invoices: z.array(z.object({
-    document_number: z.string(),
+    document_number: z.string().nullable(),
     customer_number: z.string(),
     customer_name: z.string().nullable(),
     invoice_date: z.string().nullable(),
@@ -308,7 +319,7 @@ export const ListInvoicesOutputSchema = z.object({
 });
 
 export const GetInvoiceOutputSchema = z.object({
-  document_number: z.string(),
+  document_number: z.string().nullable(),
   customer_number: z.string(),
   customer_name: z.string().nullable(),
   invoice_date: z.string().nullable(),
@@ -339,7 +350,7 @@ export const GetInvoiceOutputSchema = z.object({
 
 export const CreateInvoiceOutputSchema = z.object({
   ...writeResultFields,
-  document_number: z.string(),
+  document_number: z.string().nullable(),
   customer_number: z.string(),
   customer_name: z.string().nullable(),
   total: z.number(),
@@ -348,13 +359,13 @@ export const CreateInvoiceOutputSchema = z.object({
 
 export const UpdateInvoiceOutputSchema = z.object({
   ...writeResultFields,
-  document_number: z.string(),
+  document_number: z.string().nullable(),
   total: z.number()
 });
 
 export const BookkeepInvoiceOutputSchema = z.object({
   ...writeResultFields,
-  document_number: z.string(),
+  document_number: z.string().nullable(),
   booked: z.literal(true),
   voucher_number: z.number().nullable(),
   voucher_series: z.string().nullable(),
@@ -363,20 +374,22 @@ export const BookkeepInvoiceOutputSchema = z.object({
 
 export const CancelInvoiceOutputSchema = z.object({
   ...writeResultFields,
-  document_number: z.string(),
+  document_number: z.string().nullable(),
   cancelled: z.literal(true)
 });
 
 export const CreditInvoiceOutputSchema = z.object({
   ...writeResultFields,
   original_document_number: z.string(),
-  credit_document_number: z.string(),
+  // Read from CreditInvoiceReference on the credited invoice; null if
+  // Fortnox did not report it.
+  credit_document_number: z.string().nullable(),
   total: z.number()
 });
 
 export const SendInvoiceEmailOutputSchema = z.object({
   ...writeResultFields,
-  document_number: z.string(),
+  document_number: z.string().nullable(),
   sent: z.literal(true)
 });
 

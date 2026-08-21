@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { fetchAllPages } from "../services/api.js";
 import { ResponseFormat } from "../constants.js";
+import { toNumber, type FortnoxNumeric } from "../services/coerce.js";
 import { uiMeta } from "../apps/index.js";
 import {
   buildToolResponse,
@@ -107,8 +108,10 @@ interface FortnoxSupplierInvoiceListItem {
   SupplierName?: string;
   InvoiceDate?: string;
   DueDate?: string;
-  Total?: number;
-  Balance?: number;
+  /** String in the spec (fortnox_SupplierInvoiceListItem) — read via toNumber(). */
+  Total?: FortnoxNumeric;
+  /** String in the spec (fortnox_SupplierInvoiceListItem) — read via toNumber(). */
+  Balance?: FortnoxNumeric;
   Currency?: string;
   Booked?: boolean;
   /** The list endpoint spells this "Cancel"; only the detail object uses "Cancelled". */
@@ -364,7 +367,7 @@ Error Handling:
           const periodPayables = payablesByPeriod.get(bucket) || [];
 
           const inflows = sumBy(periodReceivables, inv => inv.Balance || 0);
-          const outflows = sumBy(periodPayables, inv => inv.Balance || 0);
+          const outflows = sumBy(periodPayables, inv => toNumber(inv.Balance));
           const netFlow = inflows - outflows;
           runningBalance += netFlow;
 
@@ -381,7 +384,7 @@ Error Handling:
 
         // Calculate totals
         const totalInflows = sumBy(receivables, inv => inv.Balance || 0);
-        const totalOutflows = sumBy(payables, inv => inv.Balance || 0);
+        const totalOutflows = sumBy(payables, inv => toNumber(inv.Balance));
 
         const output: CashFlowForecastOutput = {
           forecast: {

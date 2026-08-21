@@ -1,11 +1,16 @@
 import { ResponseFormat, CHARACTER_LIMIT } from "../constants.js";
+import { toNumber, type FortnoxNumeric } from "./coerce.js";
 
 /**
- * Format a monetary amount with currency
+ * Format a monetary amount with currency.
+ *
+ * Accepts the string form too: the spec types supplier-invoice money as string
+ * (see coerce.ts). A string would otherwise reach String.toLocaleString, which
+ * ignores the fraction options and renders "1234.5 SEK" instead of "1 234,50 SEK".
  */
-export function formatMoney(amount: number | undefined, currency = "SEK"): string {
-  if (amount === undefined || amount === null) return "-";
-  return `${amount.toLocaleString("sv-SE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+export function formatMoney(amount: FortnoxNumeric, currency = "SEK"): string {
+  if (amount === undefined || amount === null || amount === "") return "-";
+  return `${toNumber(amount).toLocaleString("sv-SE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 }
 
 /**

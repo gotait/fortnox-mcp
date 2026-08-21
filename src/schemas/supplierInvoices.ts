@@ -135,7 +135,7 @@ export const ListSupplierInvoicesOutputSchema = z.object({
   ...listMetaFields,
   period_description: z.string().optional(),
   invoices: z.array(z.object({
-    given_number: z.string(),
+    given_number: z.string().nullable(),
     supplier_number: z.string(),
     supplier_name: z.string().nullable(),
     invoice_number: z.string().nullable(),
@@ -151,7 +151,7 @@ export const ListSupplierInvoicesOutputSchema = z.object({
 });
 
 export const GetSupplierInvoiceOutputSchema = z.object({
-  given_number: z.string(),
+  given_number: z.string().nullable(),
   supplier_number: z.string(),
   supplier_name: z.string().nullable(),
   invoice_number: z.string().nullable(),
@@ -180,7 +180,7 @@ export const GetSupplierInvoiceOutputSchema = z.object({
 
 export const ApproveSupplierInvoiceOutputSchema = z.object({
   ...writeResultFields,
-  given_number: z.string(),
+  given_number: z.string().nullable(),
   supplier_name: z.string().nullable(),
   total: z.number(),
   payment_pending: z.boolean()
@@ -211,7 +211,7 @@ export const PayablesReportOutputSchema = z.object({
     total_balance: z.number()
   })).optional().describe("Present when group_by is 'supplier' or 'both'"),
   invoices: z.array(z.object({
-    given_number: z.string(),
+    given_number: z.string().nullable(),
     supplier_number: z.string(),
     supplier_name: z.string().nullable(),
     invoice_number: z.string().nullable(),

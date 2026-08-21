@@ -174,7 +174,7 @@ Returns:
           ...(truncated ? { truncated, truncation_reason: truncationReason } : {}),
           ...(filterWarning ? { filter_warning: filterWarning } : {}),
           suppliers: suppliers.map((s) => ({
-            supplier_number: s.SupplierNumber,
+            supplier_number: s.SupplierNumber ?? null,
             name: s.Name,
             email: s.Email || null,
             city: s.City || null,
@@ -240,7 +240,7 @@ Returns:
         const supplier = response.Supplier;
 
         const output: GetSupplierOutput = {
-          supplier_number: supplier.SupplierNumber,
+          supplier_number: supplier.SupplierNumber ?? null,
           name: supplier.Name,
           email: supplier.Email || null,
           phone: supplier.Phone1 || null,
@@ -359,7 +359,7 @@ Returns:
         const output: MutateSupplierOutput = {
           success: true,
           message: `Supplier "${supplier.Name}" created successfully`,
-          supplier_number: supplier.SupplierNumber,
+          supplier_number: supplier.SupplierNumber ?? null,
           name: supplier.Name
         };
 
@@ -437,7 +437,7 @@ Returns:
         const output: MutateSupplierOutput = {
           success: true,
           message: `Supplier "${supplier.Name}" updated successfully`,
-          supplier_number: supplier.SupplierNumber,
+          supplier_number: supplier.SupplierNumber ?? null,
           name: supplier.Name
         };
 

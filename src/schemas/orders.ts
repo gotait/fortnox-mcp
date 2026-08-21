@@ -161,15 +161,16 @@ export const ListOrdersOutputSchema = z.object({
   ...listMetaFields,
   period_description: z.string().optional(),
   orders: z.array(z.object({
-    document_number: z.string(),
+    document_number: z.string().nullable(),
     customer_number: z.string(),
     customer_name: z.string().nullable(),
     order_date: z.string().nullable(),
     delivery_date: z.string().nullable(),
     total: z.number(),
     currency: z.string(),
-    status: z.string(),
-    invoice_reference: z.string().nullable()
+    // cancelled | invoiced | sent | draft. "invoiced" is only reachable with
+    // filter="invoicecreated" — the list payload carries no InvoiceReference.
+    status: z.string()
   }))
 });
 
@@ -177,16 +178,18 @@ export const ListOffersOutputSchema = z.object({
   ...listMetaFields,
   period_description: z.string().optional(),
   offers: z.array(z.object({
-    document_number: z.string(),
+    document_number: z.string().nullable(),
     customer_number: z.string(),
     customer_name: z.string().nullable(),
     offer_date: z.string().nullable(),
-    expire_date: z.string().nullable(),
     total: z.number(),
     currency: z.string(),
+    // cancelled | converted | sent | draft. "converted" is only reachable with
+    // filter="ordercreated" — the list payload carries no OrderReference.
     status: z.string(),
-    expired: z.boolean(),
-    order_reference: z.string().nullable()
+    // null when the filter does not settle it; the list payload carries no
+    // ExpireDate, so there is nothing to compare a date against.
+    expired: z.boolean().nullable()
   }))
 });
 

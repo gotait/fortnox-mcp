@@ -21,9 +21,10 @@ type CompanyInfoInput = z.infer<typeof CompanyInfoSchema>;
 /* ---- output schemas (see src/schemas/common.ts for the rules) ---- */
 
 const CompanyInfoOutputSchema = z.object({
-  company_name: z.string(),
-  organisation_number: z.string(),
-  database_number: z.string(),
+  // fortnox_CompanyInfo declares no required fields.
+  company_name: z.string().nullable(),
+  organisation_number: z.string().nullable(),
+  database_number: z.string().nullable(),
   address: z.string().nullable(),
   zip_code: z.string().nullable(),
   city: z.string().nullable(),
@@ -43,7 +44,8 @@ const CompanyInfoOutputSchema = z.object({
 const ListFinancialYearsOutputSchema = z.object({
   count: z.number(),
   financial_years: z.array(z.object({
-    id: z.number(),
+    // fortnox_FinancialYear requires only FromDate and ToDate.
+    id: z.number().nullable(),
     from_date: z.string(),
     to_date: z.string(),
     accounting_method: z.string().nullable()
@@ -60,7 +62,9 @@ interface FortnoxCompanyInfo {
   CompanyName: string;
   Country: string;
   CountryCode: string;
-  DatabaseNumber: string;
+  // Fortnox sends this as an int32 on /3/companyinformation, but as a string
+  // on /3/settings/company. Accept both and normalise to a string.
+  DatabaseNumber: number | string;
   Email: string;
   Fax: string;
   OrganizationNumber: string;
@@ -125,9 +129,9 @@ Returns:
         const company = response.CompanyInformation;
 
         const output: CompanyInfoOutput = {
-          company_name: company.CompanyName,
-          organisation_number: company.OrganizationNumber,
-          database_number: company.DatabaseNumber,
+          company_name: company.CompanyName ?? null,
+          organisation_number: company.OrganizationNumber ?? null,
+          database_number: company.DatabaseNumber != null ? String(company.DatabaseNumber) : null,
           address: company.Address || null,
           zip_code: company.ZipCode || null,
           city: company.City || null,
@@ -205,7 +209,7 @@ Returns:
         const output: ListFinancialYearsOutput = {
           count: financialYears.length,
           financial_years: financialYears.map((fy) => ({
-            id: fy.Id,
+            id: fy.Id ?? null,
             from_date: fy.FromDate,
             to_date: fy.ToDate,
             accounting_method: fy.AccountingMethod || null

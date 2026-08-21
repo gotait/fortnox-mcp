@@ -135,8 +135,8 @@ export const InvoiceSummaryOutputSchema = z.object({
   groups: z.array(z.object({ key: z.string(), stats: InvoiceStatsSchema }))
     .optional().describe("Present when group_by is set"),
   invoices: z.array(z.object({
-    document_number: z.string(),
-    customer_number: z.string(),
+    document_number: z.string().nullable(),
+    customer_number: z.string().nullable(),
     customer_name: z.string().nullable(),
     invoice_date: z.string().nullable(),
     total: z.number(),
@@ -153,6 +153,7 @@ export const TopCustomersOutputSchema = z.object({
   ...truncationFields,
   customers: z.array(z.object({
     rank: z.number(),
+    // Locally computed group key with an "unknown" fallback — always present.
     customer_number: z.string(),
     customer_name: z.string(),
     total_amount: z.number(),
@@ -160,7 +161,7 @@ export const TopCustomersOutputSchema = z.object({
     unpaid_amount: z.number(),
     average_invoice: z.number(),
     invoices: z.array(z.object({
-      document_number: z.string(),
+      document_number: z.string().nullable(),
       // read straight off the payload here, unlike the top-level list which
       // applies a `|| null` fallback
       invoice_date: z.string().nullish(),
@@ -186,8 +187,8 @@ export const UnpaidReportOutputSchema = z.object({
     total_balance: z.number()
   })).optional().describe("Present when group_by is 'customer' or 'both'"),
   invoices: z.array(z.object({
-    document_number: z.string(),
-    customer_number: z.string(),
+    document_number: z.string().nullable(),
+    customer_number: z.string().nullable(),
     customer_name: z.string().nullable(),
     invoice_date: z.string().nullable(),
     due_date: z.string().nullable(),

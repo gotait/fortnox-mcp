@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { fortnoxRequest, fetchAllPages } from "../services/api.js";
 import { ResponseFormat } from "../constants.js";
+import { toNumber, type FortnoxNumeric } from "../services/coerce.js";
 import {
   buildToolResponse,
   buildErrorResponse,
@@ -49,7 +50,13 @@ import {
 interface FortnoxInvoiceRow {
   ArticleNumber?: string;
   Description?: string;
-  DeliveredQuantity?: number;
+  /**
+   * String in the spec — all 13 row schemas (fortnox_Invoice_InvoiceRow,
+   * fortnox_InvoicePayload_InvoiceRow, order/offer/contract rows) declare
+   * DeliveredQuantity as a plain string, while the sibling money fields on the
+   * same schemas are explicitly `double`. Read via toNumber().
+   */
+  DeliveredQuantity?: FortnoxNumeric;
   Unit?: string;
   Price?: number;
   Discount?: number;
@@ -76,6 +83,8 @@ interface FortnoxInvoice {
   Comments?: string;
   Remarks?: string;
   InvoiceRows?: FortnoxInvoiceRow[];
+  /** Set on the credited invoice; identifies the credit note that was created. */
+  CreditInvoiceReference?: string;
   VoucherNumber?: number;
   VoucherSeries?: string;
   VoucherYear?: number;
@@ -247,7 +256,7 @@ Error Handling:
           ...paginationMeta,
           period_description: params.period ? getPeriodDescription(params.period) : undefined,
           invoices: invoices.map((inv) => ({
-            document_number: inv.DocumentNumber,
+            document_number: inv.DocumentNumber ?? null,
             customer_number: inv.CustomerNumber,
             customer_name: inv.CustomerName || null,
             invoice_date: inv.InvoiceDate || null,
@@ -355,7 +364,7 @@ Returns:
         const invoice = response.Invoice;
 
         const output: GetInvoiceOutput = {
-          document_number: invoice.DocumentNumber,
+          document_number: invoice.DocumentNumber ?? null,
           customer_number: invoice.CustomerNumber,
           customer_name: invoice.CustomerName || null,
           invoice_date: invoice.InvoiceDate || null,
@@ -374,7 +383,7 @@ Returns:
           rows: (invoice.InvoiceRows || []).map((row) => ({
             article_number: row.ArticleNumber || null,
             description: row.Description || null,
-            quantity: row.DeliveredQuantity || 0,
+            quantity: toNumber(row.DeliveredQuantity),
             unit: row.Unit || null,
             price: row.Price || 0,
             discount: row.Discount || 0,
@@ -455,7 +464,8 @@ Args:
   - due_date (string): Due date YYYY-MM-DD
   - our_reference (string): Our reference person
   - your_reference (string): Customer's reference
-  - invoice_type ('INVOICE' | 'CASH' | 'CARD' | 'UNDEFINED'): Invoice type
+  - invoice_type ('INVOICE' | 'AGREEMENTINVOICE' | 'INTRESTINVOICE' | 'SUMMARYINVOICE' | 'CASHINVOICE'): Invoice type
+  - payment_way ('CASH' | 'CARD' | 'AG'): How the invoice is paid (autogiro = 'AG')
   - currency (string): 3-letter currency code
   - terms_of_payment (string): Payment terms code
   - comments (string): Internal comments
@@ -500,6 +510,7 @@ Example rows:
         if (params.our_reference) invoiceData.OurReference = params.our_reference;
         if (params.your_reference) invoiceData.YourReference = params.your_reference;
         if (params.invoice_type) invoiceData.InvoiceType = params.invoice_type;
+        if (params.payment_way) invoiceData.PaymentWay = params.payment_way;
         if (params.currency) invoiceData.Currency = params.currency;
         if (params.terms_of_payment) invoiceData.TermsOfPayment = params.terms_of_payment;
         if (params.comments) invoiceData.Comments = params.comments;
@@ -517,7 +528,7 @@ Example rows:
         const output: CreateInvoiceOutput = {
           success: true,
           message: `Invoice #${invoice.DocumentNumber} created successfully`,
-          document_number: invoice.DocumentNumber,
+          document_number: invoice.DocumentNumber ?? null,
           customer_number: invoice.CustomerNumber,
           customer_name: invoice.CustomerName || null,
           total: invoice.Total || 0,
@@ -616,7 +627,7 @@ Returns:
         const output: UpdateInvoiceOutput = {
           success: true,
           message: `Invoice #${invoice.DocumentNumber} updated successfully`,
-          document_number: invoice.DocumentNumber,
+          document_number: invoice.DocumentNumber ?? null,
           total: invoice.Total || 0
         };
 
@@ -670,7 +681,7 @@ Returns:
         const output: BookkeepInvoiceOutput = {
           success: true,
           message: `Invoice #${invoice.DocumentNumber} has been booked`,
-          document_number: invoice.DocumentNumber,
+          document_number: invoice.DocumentNumber ?? null,
           booked: true,
           voucher_number: invoice.VoucherNumber ?? null,
           voucher_series: invoice.VoucherSeries || null,
@@ -730,7 +741,7 @@ Returns:
         const output: CancelInvoiceOutput = {
           success: true,
           message: `Invoice #${invoice.DocumentNumber} has been cancelled`,
-          document_number: invoice.DocumentNumber,
+          document_number: invoice.DocumentNumber ?? null,
           cancelled: true
         };
 
@@ -777,14 +788,21 @@ Returns:
           `/3/invoices/${encodeURIComponent(params.document_number)}/credit`,
           "PUT"
         );
-        const creditInvoice = response.Invoice;
+        // The PUT returns the *credited* invoice, not the credit note: "The
+        // created credit invoice will be referenced in the property
+        // CreditInvoiceReference." Reading DocumentNumber off it reported the
+        // original invoice's own number as the credit note's.
+        const creditedInvoice = response.Invoice;
+        const creditReference = creditedInvoice.CreditInvoiceReference || null;
 
         const output: CreditInvoiceOutput = {
           success: true,
-          message: `Credit invoice #${creditInvoice.DocumentNumber} created for invoice #${params.document_number}`,
+          message: creditReference
+            ? `Credit invoice #${creditReference} created for invoice #${params.document_number}`
+            : `Invoice #${params.document_number} was credited (Fortnox returned no credit invoice reference)`,
           original_document_number: params.document_number,
-          credit_document_number: creditInvoice.DocumentNumber,
-          total: creditInvoice.Total || 0
+          credit_document_number: creditReference,
+          total: creditedInvoice.Total || 0
         };
 
         let textContent: string;
@@ -792,9 +810,9 @@ Returns:
           textContent = JSON.stringify(output, null, 2);
         } else {
           textContent = `# Credit Invoice Created\n\n` +
-            `**Credit Invoice**: #${creditInvoice.DocumentNumber}\n` +
+            `**Credit Invoice**: ${creditReference ? `#${creditReference}` : "not reported by Fortnox"}\n` +
             `**Original Invoice**: #${params.document_number}\n` +
-            `**Total**: ${formatMoney(creditInvoice.Total, creditInvoice.Currency)}`;
+            `**Total**: ${formatMoney(creditedInvoice.Total, creditedInvoice.Currency)}`;
         }
 
         return buildToolResponse(textContent, output);
@@ -840,7 +858,7 @@ Returns:
         const output: SendInvoiceEmailOutput = {
           success: true,
           message: `Invoice #${invoice.DocumentNumber} sent by email`,
-          document_number: invoice.DocumentNumber,
+          document_number: invoice.DocumentNumber ?? null,
           sent: true
         };
 

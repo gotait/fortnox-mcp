@@ -22,6 +22,8 @@ import {
   ListOffersOutputSchema,
   type ListOrdersOutput,
   type ListOffersOutput,
+  type OrderFilter,
+  type OfferFilter,
 } from "../schemas/orders.js";
 
 // API response types for Orders
@@ -35,7 +37,8 @@ interface FortnoxOrderListItem {
   Currency?: string;
   Cancelled?: boolean;
   Sent?: boolean;
-  InvoiceReference?: string;
+  // No InvoiceReference here: fortnox_OrderListItem does not carry it (it
+  // exists only on the fortnox_Order detail object). See getOrderStatus().
   "@url"?: string;
 }
 
@@ -54,12 +57,13 @@ interface FortnoxOfferListItem {
   CustomerNumber: string;
   CustomerName?: string;
   OfferDate?: string;
-  ExpireDate?: string;
   Total?: number;
   Currency?: string;
   Cancelled?: boolean;
   Sent?: boolean;
-  OrderReference?: string;
+  // No ExpireDate and no OrderReference here: fortnox_OfferListItem carries
+  // neither (both exist only on the fortnox_Offer detail object). See
+  // getOfferStatus() / offerExpired().
   "@url"?: string;
 }
 
@@ -72,35 +76,43 @@ interface OfferListResponse {
   };
 }
 
-/**
- * Get order status based on properties
- */
-function getOrderStatus(order: FortnoxOrderListItem): string {
+/* -------------------------------------------------------------------------- *
+ * Status derivation
+ *
+ * The list payloads are thinner than the detail objects, and the difference is
+ * exactly the fields a status needs: fortnox_OrderListItem has no
+ * InvoiceReference, and fortnox_OfferListItem has neither OrderReference nor
+ * ExpireDate. Those live only on fortnox_Order / fortnox_Offer, behind
+ * /3/orders/{n} and /3/offers/{n}. Reading them off a list row yielded
+ * undefined, so "invoiced" and "converted" were unreachable and `expired` was
+ * false for every offer ever returned.
+ *
+ * What a list response does tell us is the filter the caller asked for:
+ * filter=invoicecreated returns only invoiced orders, ordercreated only
+ * converted offers, expired only expired ones. So the filter is the evidence,
+ * and without it the answer is "unknown" rather than a confident wrong one.
+ * biAnalytics.ts already routes around the same gap this way.
+ * -------------------------------------------------------------------------- */
+
+function getOrderStatus(order: FortnoxOrderListItem, filter?: OrderFilter): string {
   if (order.Cancelled) return "cancelled";
-  if (order.InvoiceReference) return "invoiced";
+  if (filter === "invoicecreated") return "invoiced";
   if (order.Sent) return "sent";
   return "draft";
 }
 
-/**
- * Get offer status based on properties
- */
-function getOfferStatus(offer: FortnoxOfferListItem): string {
+function getOfferStatus(offer: FortnoxOfferListItem, filter?: OfferFilter): string {
   if (offer.Cancelled) return "cancelled";
-  if (offer.OrderReference) return "converted";
+  if (filter === "ordercreated") return "converted";
   if (offer.Sent) return "sent";
   return "draft";
 }
 
-/**
- * Check if offer is expired
- */
-function isOfferExpired(offer: FortnoxOfferListItem): boolean {
-  if (!offer.ExpireDate) return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const expireDate = new Date(offer.ExpireDate);
-  return expireDate < today;
+/** true/false only when the filter settles it; null when the list cannot say. */
+function offerExpired(filter?: OfferFilter): boolean | null {
+  if (filter === "expired") return true;
+  if (filter === "ordercreated" || filter === "completed") return false;
+  return null;
 }
 
 /**
@@ -133,6 +145,12 @@ Args:
 Returns:
   For JSON: { total, page, limit, count, has_more, total_pages, next_offset?, truncated?, orders: [...] }
   For Markdown: Formatted list with pagination info
+
+Note on status:
+  Each order's status is one of 'cancelled', 'invoiced', 'sent', 'draft'. The list
+  endpoint does not report whether an invoice was created from an order, so 'invoiced'
+  is only returned when you pass filter="invoicecreated". To split orders by invoicing,
+  query filter="invoicecreated" and filter="invoicenotcreated" rather than reading status.
 
 Examples:
   - Orders not yet invoiced: filter="invoicenotcreated"
@@ -221,15 +239,14 @@ Error Handling:
           ...paginationMeta,
           period_description: params.period ? getPeriodDescription(params.period) : undefined,
           orders: orders.map((order) => ({
-            document_number: order.DocumentNumber,
+            document_number: order.DocumentNumber ?? null,
             customer_number: order.CustomerNumber,
             customer_name: order.CustomerName || null,
             order_date: order.OrderDate || null,
             delivery_date: order.DeliveryDate || null,
             total: order.Total || 0,
             currency: order.Currency || "SEK",
-            status: getOrderStatus(order),
-            invoice_reference: order.InvoiceReference || null
+            status: getOrderStatus(order, params.filter)
           }))
         };
 
@@ -257,12 +274,12 @@ Error Handling:
             lines.push("");
 
             for (const order of orders) {
-              const status = getOrderStatus(order);
+              const status = getOrderStatus(order, params.filter);
               lines.push(`## Order #${order.DocumentNumber}`);
               lines.push(`- **Customer**: ${order.CustomerName || order.CustomerNumber}`);
               lines.push(`- **Date**: ${formatDisplayDate(order.OrderDate)} | **Delivery**: ${formatDisplayDate(order.DeliveryDate)}`);
               lines.push(`- **Total**: ${formatMoney(order.Total, order.Currency)}`);
-              lines.push(`- **Status**: ${status.toUpperCase()}${order.InvoiceReference ? ` (Invoice: ${order.InvoiceReference})` : ""}`);
+              lines.push(`- **Status**: ${status.toUpperCase()}`);
               lines.push("");
             }
 
@@ -275,12 +292,12 @@ Error Handling:
               params.page,
               params.limit,
               (order) => {
-                const status = getOrderStatus(order);
+                const status = getOrderStatus(order, params.filter);
                 return `## Order #${order.DocumentNumber}\n` +
                   `- **Customer**: ${order.CustomerName || order.CustomerNumber}\n` +
                   `- **Date**: ${formatDisplayDate(order.OrderDate)} | **Delivery**: ${formatDisplayDate(order.DeliveryDate)}\n` +
                   `- **Total**: ${formatMoney(order.Total, order.Currency)}\n` +
-                  `- **Status**: ${status.toUpperCase()}${order.InvoiceReference ? ` (Invoice: ${order.InvoiceReference})` : ""}`;
+                  `- **Status**: ${status.toUpperCase()}`;
               }
             );
           }
@@ -319,6 +336,13 @@ Args:
 Returns:
   For JSON: { total, page, limit, count, has_more, total_pages, next_offset?, truncated?, offers: [...] }
   For Markdown: Formatted list with pagination info
+
+Note on status and expiry:
+  Each offer's status is one of 'cancelled', 'converted', 'sent', 'draft'. The list
+  endpoint reports neither the order created from an offer nor the offer's expiry date,
+  so 'converted' is only returned when you pass filter="ordercreated", and 'expired' is
+  null unless the filter settles it. Use filter="expired" / "ordercreated" /
+  "ordernotcreated" to answer those questions.
 
 Examples:
   - Offers not yet converted to orders: filter="ordernotcreated"
@@ -407,18 +431,20 @@ Error Handling:
           ...paginationMeta,
           period_description: params.period ? getPeriodDescription(params.period) : undefined,
           offers: offers.map((offer) => ({
-            document_number: offer.DocumentNumber,
+            document_number: offer.DocumentNumber ?? null,
             customer_number: offer.CustomerNumber,
             customer_name: offer.CustomerName || null,
             offer_date: offer.OfferDate || null,
-            expire_date: offer.ExpireDate || null,
             total: offer.Total || 0,
             currency: offer.Currency || "SEK",
-            status: getOfferStatus(offer),
-            expired: isOfferExpired(offer),
-            order_reference: offer.OrderReference || null
+            status: getOfferStatus(offer, params.filter),
+            expired: offerExpired(params.filter)
           }))
         };
+
+        // Same for every row in the response: it is derived from the filter,
+        // not from the individual offer.
+        const expiredNote = offerExpired(params.filter) ? " (EXPIRED)" : "";
 
         let textContent: string;
         if (params.response_format === ResponseFormat.JSON) {
@@ -444,13 +470,12 @@ Error Handling:
             lines.push("");
 
             for (const offer of offers) {
-              const status = getOfferStatus(offer);
-              const expired = isOfferExpired(offer);
+              const status = getOfferStatus(offer, params.filter);
               lines.push(`## Offer #${offer.DocumentNumber}`);
               lines.push(`- **Customer**: ${offer.CustomerName || offer.CustomerNumber}`);
-              lines.push(`- **Date**: ${formatDisplayDate(offer.OfferDate)} | **Expires**: ${formatDisplayDate(offer.ExpireDate)}${expired ? " (EXPIRED)" : ""}`);
+              lines.push(`- **Date**: ${formatDisplayDate(offer.OfferDate)}`);
               lines.push(`- **Total**: ${formatMoney(offer.Total, offer.Currency)}`);
-              lines.push(`- **Status**: ${status.toUpperCase()}${offer.OrderReference ? ` (Order: ${offer.OrderReference})` : ""}`);
+              lines.push(`- **Status**: ${status.toUpperCase()}${expiredNote}`);
               lines.push("");
             }
 
@@ -463,13 +488,12 @@ Error Handling:
               params.page,
               params.limit,
               (offer) => {
-                const status = getOfferStatus(offer);
-                const expired = isOfferExpired(offer);
+                const status = getOfferStatus(offer, params.filter);
                 return `## Offer #${offer.DocumentNumber}\n` +
                   `- **Customer**: ${offer.CustomerName || offer.CustomerNumber}\n` +
-                  `- **Date**: ${formatDisplayDate(offer.OfferDate)} | **Expires**: ${formatDisplayDate(offer.ExpireDate)}${expired ? " (EXPIRED)" : ""}\n` +
+                  `- **Date**: ${formatDisplayDate(offer.OfferDate)}\n` +
                   `- **Total**: ${formatMoney(offer.Total, offer.Currency)}\n` +
-                  `- **Status**: ${status.toUpperCase()}${offer.OrderReference ? ` (Order: ${offer.OrderReference})` : ""}`;
+                  `- **Status**: ${status.toUpperCase()}${expiredNote}`;
               }
             );
           }

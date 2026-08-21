@@ -169,8 +169,8 @@ Examples:
           vouchers: vouchers.map((v) => ({
             voucher_series: v.VoucherSeries,
             voucher_number: v.VoucherNumber,
-            description: v.Description,
-            transaction_date: v.TransactionDate
+            description: v.Description ?? null,
+            transaction_date: v.TransactionDate ?? null
           }))
         };
 
@@ -438,7 +438,7 @@ Returns:
           count: series.length,
           series: series.map((s) => ({
             code: s.Code,
-            description: s.Description,
+            description: s.Description ?? null,
             manual: s.Manual ?? false
           }))
         };
@@ -989,8 +989,8 @@ Examples:
             matchingVouchers.push({
               voucher_series: v.VoucherSeries,
               voucher_number: v.VoucherNumber,
-              transaction_date: v.TransactionDate,
-              description: v.Description,
+              transaction_date: v.TransactionDate ?? null,
+              description: v.Description ?? null,
               matched_in: "description"
             });
           }
